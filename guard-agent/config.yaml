@@ -1,6 +1,6 @@
 name: "Guard Agent"
 description: "Guard IoT remote management agent — network scanning, file management, shell execution, integration control, telemetry."
-version: "1.0.0"
+version: "1.0.1"
 slug: guard-agent
 url: "https://github.com/jufusius/guard-ha-addons"
 
@@ -15,9 +15,9 @@ startup: services
 boot: auto
 init: false
 
-# Network — host_network pro ARP scan, Tuya UDP, ping sweep
-# Port 8300 = Guard Agent REST API (přístupný přes Cloudflare tunnel)
-host_network: true
+#CC- Port 8300 = Guard Agent REST API (přístupný přes Cloudflare tunnel)
+#CC- host_network MUSÍ být false — jinak Cloudflared addon nemůže routovat na port
+#CC- Scan sítě se dělá přes Supervisor API (network/info) + HA device_tracker
 ports:
   "8300/tcp": 8300
 ports_description:
