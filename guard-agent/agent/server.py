@@ -595,6 +595,174 @@ async def scanner_loop():
         await asyncio.sleep(SCAN_INTERVAL * 60)
 
 
+# ── Command polling loop ──
+async def command_poll_loop():
+    """Poll MCP server for commands, execute them locally."""
+    await asyncio.sleep(20)
+    while True:
+        if not API_KEY or not SERVER_URL:
+            await asyncio.sleep(60)
+            continue
+
+        try:
+            import urllib.request as urlreq
+
+            # Poll for pending commands
+            req = urlreq.Request(
+                f"{SERVER_URL}/api/agent/{API_KEY}/commands",
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urlreq.urlopen(req, timeout=15)
+            data = json.loads(resp.read())
+            commands = data.get("commands", [])
+
+            for cmd in commands:
+                cmd_id = cmd.get("id")
+                command = cmd.get("command", "")
+                payload = cmd.get("payload")
+                if payload and isinstance(payload, str):
+                    try: payload = json.loads(payload)
+                    except: pass
+
+                log.info("Executing command #%s: %s", cmd_id, command)
+
+                try:
+                    result = await _execute_command(command, payload)
+                except Exception as e:
+                    result = {"error": str(e)}
+
+                # Report result back
+                try:
+                    result_data = json.dumps({"command_id": cmd_id, "result": result}).encode()
+                    req2 = urlreq.Request(
+                        f"{SERVER_URL}/api/agent/{API_KEY}/result",
+                        data=result_data,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    urlreq.urlopen(req2, timeout=15)
+                    log.info("Command #%s completed: %s", cmd_id, command)
+                except Exception as e:
+                    log.warning("Failed to report result for #%s: %s", cmd_id, e)
+
+        except Exception as e:
+            if "404" not in str(e) and "connection" not in str(e).lower():
+                log.warning("Command poll error: %s", e)
+
+        await asyncio.sleep(60)  # Poll every 60 seconds
+
+
+async def _execute_command(command, payload):
+    """Execute a command from MCP server."""
+    payload = payload or {}
+
+    if command == "scan_network":
+        devices = await asyncio.to_thread(_arp_scan)
+        return {"devices": devices, "count": len(devices)}
+
+    elif command == "read_file":
+        path = payload.get("path", "")
+        full = _safe_path(path)
+        if not full or not full.is_file():
+            return {"error": "file not found"}
+        return {"content": full.read_text(encoding="utf-8"), "size": full.stat().st_size}
+
+    elif command == "write_file":
+        path = payload.get("path", "")
+        content = payload.get("content", "")
+        full = _safe_path(path)
+        if not full:
+            return {"error": "invalid path"}
+        if full.exists():
+            backup = full.with_suffix(full.suffix + f".bak.{datetime.now().strftime('%Y%m%d%H%M%S')}")
+            backup.write_text(full.read_text(encoding="utf-8"), encoding="utf-8")
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(content, encoding="utf-8")
+        return {"ok": True, "path": path, "size": len(content)}
+
+    elif command == "shell_exec":
+        cmd = payload.get("command", "")
+        timeout = min(payload.get("timeout", 30), 120)
+        result = await asyncio.to_thread(
+            subprocess.run, cmd, shell=True, capture_output=True, text=True, timeout=timeout
+        )
+        return {"exit_code": result.returncode, "stdout": result.stdout[-10000:], "stderr": result.stderr[-5000:]}
+
+    elif command == "supervisor_get":
+        path = payload.get("path", "supervisor/info")
+        return await _supervisor_cmd("GET", path)
+
+    elif command == "supervisor_post":
+        path = payload.get("path", "")
+        body = payload.get("body")
+        return await _supervisor_cmd("POST", path, body)
+
+    elif command == "ha_states":
+        states = await _get_ha_states()
+        if states:
+            summary = {}
+            for s in states:
+                eid = s.get("entity_id", "")
+                if s.get("state") not in ("unavailable", "unknown"):
+                    summary[eid] = s.get("state")
+            return {"entity_count": len(summary), "states": summary}
+        return {"error": "no states"}
+
+    elif command == "ha_call_service":
+        domain = payload.get("domain", "")
+        service = payload.get("service", "")
+        data = payload.get("data", {})
+        return await _ha_service_call(domain, service, data)
+
+    elif command == "restart_ha":
+        return await _supervisor_cmd("POST", "core/restart")
+
+    elif command == "list_addons":
+        return await _supervisor_cmd("GET", "addons")
+
+    elif command == "install_addon":
+        slug = payload.get("slug", "")
+        return await _supervisor_cmd("POST", f"store/addons/{slug}/install")
+
+    elif command == "get_network_info":
+        return await _supervisor_cmd("GET", "network/info")
+
+    elif command == "get_host_info":
+        return await _supervisor_cmd("GET", "host/info")
+
+    else:
+        return {"error": f"unknown command: {command}"}
+
+
+async def _supervisor_cmd(method, path, body=None):
+    if not SUPERVISOR_TOKEN:
+        return {"error": "no supervisor token"}
+    url = f"{SUPERVISOR_URL}/{path}"
+    headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
+    async with ClientSession() as session:
+        try:
+            if method == "GET":
+                async with session.get(url, headers=headers) as resp:
+                    return await resp.json()
+            else:
+                async with session.post(url, headers=headers, data=json.dumps(body) if body else None) as resp:
+                    return await resp.json()
+        except Exception as e:
+            return {"error": str(e)}
+
+
+async def _ha_service_call(domain, service, data):
+    if not SUPERVISOR_TOKEN:
+        return {"error": "no supervisor token"}
+    url = f"{SUPERVISOR_URL}/core/api/services/{domain}/{service}"
+    headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
+    async with ClientSession() as session:
+        try:
+            async with session.post(url, headers=headers, data=json.dumps(data)) as resp:
+                return {"status": resp.status, "ok": resp.status == 200}
+        except Exception as e:
+            return {"error": str(e)}
+
+
 # ── App setup ──
 def create_app():
     app = web.Application(middlewares=[auth_middleware])
@@ -633,8 +801,9 @@ def create_app():
 async def main():
     app = create_app()
 
-    # Start background scanner
+    # Start background tasks
     asyncio.create_task(scanner_loop())
+    asyncio.create_task(command_poll_loop())
 
     runner = web.AppRunner(app)
     await runner.setup()
