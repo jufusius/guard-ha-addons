@@ -1,0 +1,13 @@
+configuration:
+  api_key:
+    name: API klíč
+    description: Váš Guard API klíč z Guard portálu.
+  server_url:
+    name: Adresa serveru
+    description: URL adresa Guard IoT serveru.
+  scan_interval:
+    name: Interval skenování
+    description: Jak často skenovat síť (v minutách).
+  tuya_scan:
+    name: Tuya detekce
+    description: Automaticky identifikovat Tuya/Smart Life zařízení.

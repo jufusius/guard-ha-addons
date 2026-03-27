@@ -1,0 +1,28 @@
+name: "Guard Network Scanner"
+description: "Automaticky skenuje vaši síť a reportuje zařízení na Guard IoT server pro správu a onboarding."
+version: "1.0.0"
+slug: guard-scanner
+url: "https://github.com/jufusi/guard-ha-addons"
+arch:
+  - amd64
+  - aarch64
+  - armv7
+  - armhf
+  - i386
+startup: services
+boot: auto
+host_network: true
+options:
+  api_key: ""
+  server_url: "https://mcp.jufusi.us"
+  scan_interval: 30
+  tuya_scan: true
+schema:
+  api_key: str
+  server_url: url
+  scan_interval: "int(5,1440)"
+  tuya_scan: bool
+ports:
+  "8201/tcp": null
+ports_description:
+  "8201/tcp": "Health check endpoint"
