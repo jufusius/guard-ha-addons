@@ -159,7 +159,7 @@ def send_to_guard(devices):
         try:
             req = urllib.request.Request(
                 url, data=payload,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "User-Agent": "GuardScanner/1.1"},
                 method="POST",
             )
             resp = urllib.request.urlopen(req, timeout=15)
