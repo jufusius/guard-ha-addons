@@ -581,7 +581,7 @@ async def scanner_loop():
                     req = urllib.request.Request(
                         f"{SERVER_URL}/api/devices/{API_KEY}",
                         data=payload,
-                        headers={"Content-Type": "application/json"},
+                        headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
                     )
                     resp = urllib.request.urlopen(req, timeout=15)
                     result = json.loads(resp.read())
@@ -610,7 +610,7 @@ async def command_poll_loop():
             # Poll for pending commands
             req = urlreq.Request(
                 f"{SERVER_URL}/api/agent/{API_KEY}/commands",
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
             )
             resp = urlreq.urlopen(req, timeout=15)
             data = json.loads(resp.read())
@@ -637,7 +637,7 @@ async def command_poll_loop():
                     req2 = urlreq.Request(
                         f"{SERVER_URL}/api/agent/{API_KEY}/result",
                         data=result_data,
-                        headers={"Content-Type": "application/json"},
+                        headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
                     )
                     urlreq.urlopen(req2, timeout=15)
                     log.info("Command #%s completed: %s", cmd_id, command)
