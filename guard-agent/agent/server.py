@@ -313,14 +313,33 @@ TELEMETRY_PATTERNS = {
     "grid_export_w": ["_grid_export", "_export_power", "_feed_in"],
     "battery_soc_pct": ["_state_of_charge", "_battery_soc", "_soc"],
     "battery_power_w": ["_battery_0_power", "_battery_power", "_bat_power"],
-    "temperature": ["_teplota", "_temperature"],
+    "temperature": ["weather."],  #CC- Pouze weather entity — ne invertor teplota
+}
+
+#CC- Entity patterns to EXCLUDE (false positives)
+TELEMETRY_EXCLUDE = {
+    "temperature": ["inverter_", "_teplota"],  #CC- invertor teplota je 140°C, ne venkovní
 }
 
 
-def _match_entity(entity_id, states_dict):
-    """Find first matching entity for a telemetry field."""
+def _match_entity(field, states_dict, all_states=None):
+    """Find first matching entity for a telemetry field. Respects exclude patterns."""
+    patterns = TELEMETRY_PATTERNS.get(field, [])
+    excludes = TELEMETRY_EXCLUDE.get(field, [])
+
+    #CC- Special: temperature from weather entity attributes (not state)
+    if field == "temperature" and all_states:
+        for s in all_states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("weather."):
+                temp = s.get("attributes", {}).get("temperature")
+                if temp is not None and _is_numeric(str(temp)):
+                    return float(temp)
+
     for eid, state in states_dict.items():
-        if any(pattern in eid for pattern in TELEMETRY_PATTERNS.get(entity_id, [])):
+        if any(pattern in eid for pattern in patterns):
+            if any(ex in eid for ex in excludes):
+                continue
             if _is_numeric(state):
                 return float(state)
     return None
@@ -353,7 +372,7 @@ async def handle_telemetry_push(request):
             "grid_export_w": _match_entity("grid_export_w", states_lookup),
             "battery_soc_pct": _match_entity("battery_soc_pct", states_lookup),
             "battery_power_w": _match_entity("battery_power_w", states_lookup),
-            "temperature": _match_entity("temperature", states_lookup),
+            "temperature": _match_entity("temperature", states_lookup, states),
         }
 
         # Fix: grid value from SEMS can be negative (export) or positive (import)
@@ -709,7 +728,7 @@ async def telemetry_loop():
                     "grid_export_w": _match_entity("grid_export_w", states_lookup),
                     "battery_soc_pct": _match_entity("battery_soc_pct", states_lookup),
                     "battery_power_w": _match_entity("battery_power_w", states_lookup),
-                    "temperature": _match_entity("temperature", states_lookup),
+                    "temperature": _match_entity("temperature", states_lookup, states),
                 }
 
                 # Fix negative grid/load values
