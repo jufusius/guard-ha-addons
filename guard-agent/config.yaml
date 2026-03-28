@@ -1,6 +1,6 @@
 name: "Guard Agent"
 description: "Guard IoT remote management agent — network scanning, file management, shell execution, integration control, telemetry."
-version: "1.1.1"
+version: "1.2.0"
 slug: guard-agent
 url: "https://github.com/jufusius/guard-ha-addons"
 

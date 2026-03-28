@@ -4,9 +4,8 @@ FROM ${BUILD_FROM}
 RUN apk add --no-cache python3 py3-pip py3-cryptography && \
     pip3 install --no-cache-dir --break-system-packages pycryptodome
 
-COPY run.sh /
+#CC- s6-overlay service — HA addony vyžadují init jako s6 service, ne CMD
+COPY run.sh /etc/services.d/scanner/run
 COPY scanner.py /
 
-RUN chmod +x /run.sh
-
-CMD ["/run.sh"]
+RUN chmod +x /etc/services.d/scanner/run

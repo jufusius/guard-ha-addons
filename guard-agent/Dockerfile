@@ -7,8 +7,9 @@ RUN apk add --no-cache \
     && pip3 install --no-cache-dir --break-system-packages \
         pycryptodome
 
-#CC- s6-overlay service — HA addony vyžadují init jako s6 service, ne CMD
-COPY run.sh /etc/services.d/agent/run
+COPY run.sh /
 COPY agent/ /agent/
 
-RUN chmod +x /etc/services.d/agent/run
+RUN chmod +x /run.sh
+
+CMD ["/run.sh"]

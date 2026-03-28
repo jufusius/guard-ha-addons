@@ -544,6 +544,40 @@ def _is_numeric(s):
         return False
 
 
+async def _scan_via_supervisor():
+    """Scan network via HA states — find device_tracker and known entities with IP/MAC."""
+    states = await _get_ha_states()
+    if not states:
+        return []
+
+    devices = []
+    seen_macs = set()
+
+    for s in states:
+        eid = s.get("entity_id", "")
+        attrs = s.get("attributes", {})
+
+        # device_tracker entities often have mac, ip
+        mac = attrs.get("mac", "").upper()
+        ip = attrs.get("ip")
+
+        if not mac and eid.startswith("device_tracker."):
+            # Try to get MAC from source attribute
+            mac = attrs.get("source", "").upper() if ":" in attrs.get("source", "") else ""
+
+        if mac and mac not in seen_macs and mac != "00:00:00:00:00:00":
+            seen_macs.add(mac)
+            dev = {"mac": mac}
+            if ip:
+                dev["ip"] = ip
+            hostname = attrs.get("host_name") or attrs.get("friendly_name", "")
+            if hostname:
+                dev["hostname"] = hostname
+            devices.append(dev)
+
+    return devices
+
+
 # ── Background scanner loop ──
 async def scanner_loop():
     """Periodic network scan + telemetry push."""
@@ -571,10 +605,20 @@ async def scanner_loop():
             # TCP probe
             await asyncio.to_thread(_tuya_tcp_probe, devices)
 
-            log.info("Background scan: %d devices", len(devices))
+            log.info("Background scan (local): %d devices", len(devices))
 
-            # Push to Guard server
-            if API_KEY and SERVER_URL:
+            #CC- Fallback: scan přes Supervisor API pokud lokální scan nic nenašel (bridged Docker)
+            if len(devices) == 0:
+                try:
+                    sup_devices = await _scan_via_supervisor()
+                    if sup_devices:
+                        devices = sup_devices
+                        log.info("Supervisor scan: %d devices", len(devices))
+                except Exception as e:
+                    log.warning("Supervisor scan failed: %s", e)
+
+            # Push to Guard server (only if we found something)
+            if API_KEY and SERVER_URL and len(devices) > 0:
                 try:
                     import urllib.request
                     payload = json.dumps({"devices": devices}).encode()
@@ -588,6 +632,8 @@ async def scanner_loop():
                     log.info("Guard server: %s", result)
                 except Exception as e:
                     log.warning("Guard push failed: %s", e)
+            elif len(devices) == 0:
+                log.info("No devices found, skipping push")
 
         except Exception as e:
             log.error("Scanner loop error: %s", e)
@@ -624,12 +670,33 @@ async def command_poll_loop():
                     try: payload = json.loads(payload)
                     except: pass
 
-                log.info("Executing command #%s: %s", cmd_id, command)
+                #CC- FULL verbose logging — příkaz, payload, výsledek
+                log.info("═══ Command #%s: %s ═══", cmd_id, command)
+                log.info("  PAYLOAD: %s", json.dumps(payload, ensure_ascii=False)[:500] if payload else "(none)")
 
                 try:
                     result = await _execute_command(command, payload)
                 except Exception as e:
                     result = {"error": str(e)}
+
+                #CC- Log CELÉHO výsledku (zkrácený na 1000 znaků)
+                result_str = json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result)
+                if len(result_str) > 1000:
+                    result_str = result_str[:1000] + "...(truncated)"
+
+                if isinstance(result, dict) and result.get("error"):
+                    log.error("  RESULT: FAILED — %s", result["error"])
+                elif isinstance(result, dict) and result.get("exit_code") is not None:
+                    ec = result["exit_code"]
+                    if ec != 0:
+                        log.warning("  RESULT: exit_code=%s", ec)
+                        log.warning("  STDERR: %s", str(result.get("stderr", ""))[:500])
+                        log.warning("  STDOUT: %s", str(result.get("stdout", ""))[:500])
+                    else:
+                        log.info("  RESULT: OK (exit_code=0)")
+                        log.info("  STDOUT: %s", str(result.get("stdout", ""))[:500])
+                else:
+                    log.info("  RESULT: %s", result_str)
 
                 # Report result back
                 try:
@@ -640,7 +707,7 @@ async def command_poll_loop():
                         headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
                     )
                     urlreq.urlopen(req2, timeout=15)
-                    log.info("Command #%s completed: %s", cmd_id, command)
+                    log.info("  → reported to server")
                 except Exception as e:
                     log.warning("Failed to report result for #%s: %s", cmd_id, e)
 
@@ -735,18 +802,25 @@ async def _execute_command(command, payload):
 
 async def _supervisor_cmd(method, path, body=None):
     if not SUPERVISOR_TOKEN:
+        log.error("  _supervisor_cmd: NO SUPERVISOR_TOKEN!")
         return {"error": "no supervisor token"}
     url = f"{SUPERVISOR_URL}/{path}"
     headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
+    log.info("  _supervisor_cmd: %s %s body=%s", method, url, json.dumps(body)[:300] if body else "(none)")
     async with ClientSession() as session:
         try:
             if method == "GET":
                 async with session.get(url, headers=headers) as resp:
-                    return await resp.json()
+                    data = await resp.json()
+                    log.info("  _supervisor_cmd: HTTP %s response=%s", resp.status, json.dumps(data, ensure_ascii=False)[:500])
+                    return data
             else:
                 async with session.post(url, headers=headers, data=json.dumps(body) if body else None) as resp:
-                    return await resp.json()
+                    data = await resp.json()
+                    log.info("  _supervisor_cmd: HTTP %s response=%s", resp.status, json.dumps(data, ensure_ascii=False)[:500])
+                    return data
         except Exception as e:
+            log.error("  _supervisor_cmd: EXCEPTION %s", e)
             return {"error": str(e)}
 
 
