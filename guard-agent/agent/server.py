@@ -43,7 +43,7 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.0.0"
+VERSION = "1.2.0"
 START_TIME = datetime.now()
 
 
@@ -303,51 +303,92 @@ async def _ha_request(method, path, body=None):
 
 
 # ── Telemetry push ──
+
+#CC- Entity mapping: HA entity_id patterns → telemetry fields
+#CC- Agent auto-detects entities by matching these patterns against all HA states
+TELEMETRY_PATTERNS = {
+    "fve_production_w": ["_vykon", "_pv_power", "_solar_power", "homekit_homekit_pv", "_active_power"],
+    "house_consumption_w": ["_load", "_house_consumption", "_home_consumption", "homekit_homekit_load"],
+    "grid_import_w": ["_grid_import", "_import_power", "homekit_homekit_grid"],
+    "grid_export_w": ["_grid_export", "_export_power", "_feed_in"],
+    "battery_soc_pct": ["_state_of_charge", "_battery_soc", "_soc"],
+    "battery_power_w": ["_battery_0_power", "_battery_power", "_bat_power"],
+    "temperature": ["_teplota", "_temperature"],
+}
+
+
+def _match_entity(entity_id, states_dict):
+    """Find first matching entity for a telemetry field."""
+    for eid, state in states_dict.items():
+        if any(pattern in eid for pattern in TELEMETRY_PATTERNS.get(entity_id, [])):
+            if _is_numeric(state):
+                return float(state)
+    return None
+
+
 async def handle_telemetry_push(request):
     if not API_KEY or not SERVER_URL:
         return web.json_response({"error": "not configured"}, status=400)
 
-    #CC- Sbírat všechny HA entity a poslat jako telemetrii
+    #CC- Collect HA states and map to structured telemetry format
     try:
         states = await _get_ha_states()
         if not states:
             return web.json_response({"error": "no HA states"}, status=502)
 
-        #CC- Extrahovat klíčové senzory pro telemetrii
-        telemetry = {}
+        #CC- Build entity_id → numeric_state lookup
+        states_lookup = {}
         for s in states:
             eid = s.get("entity_id", "")
             state = s.get("state")
-            if state in ("unavailable", "unknown"):
-                continue
-            attrs = s.get("attributes", {})
-            try:
-                telemetry[eid] = {
-                    "state": state,
-                    "numeric": float(state) if _is_numeric(state) else None,
-                    "unit": attrs.get("unit_of_measurement"),
-                    "friendly_name": attrs.get("friendly_name"),
-                }
-            except:
-                telemetry[eid] = {"state": state}
+            if state not in ("unavailable", "unknown"):
+                states_lookup[eid] = state
 
-        #CC- Push na Guard server
-        payload = json.dumps({
-            "timestamp": datetime.utcnow().isoformat(),
-            "entity_count": len(telemetry),
-            "entities": telemetry,
-        }).encode()
+        #CC- Map to structured telemetry payload (snake_case fields)
+        telemetry = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "fve_production_w": _match_entity("fve_production_w", states_lookup),
+            "house_consumption_w": _match_entity("house_consumption_w", states_lookup),
+            "grid_import_w": _match_entity("grid_import_w", states_lookup),
+            "grid_export_w": _match_entity("grid_export_w", states_lookup),
+            "battery_soc_pct": _match_entity("battery_soc_pct", states_lookup),
+            "battery_power_w": _match_entity("battery_power_w", states_lookup),
+            "temperature": _match_entity("temperature", states_lookup),
+        }
+
+        # Fix: grid value from SEMS can be negative (export) or positive (import)
+        grid = telemetry.get("grid_import_w")
+        if grid is not None and grid < 0:
+            telemetry["grid_export_w"] = abs(grid)
+            telemetry["grid_import_w"] = 0
+        elif grid is not None and telemetry.get("grid_export_w") is None:
+            telemetry["grid_export_w"] = 0
+
+        # Fix: house consumption from SEMS can be negative
+        load = telemetry.get("house_consumption_w")
+        if load is not None:
+            telemetry["house_consumption_w"] = abs(load)
+
+        log.info("Telemetry mapped: PV=%.0fW, Load=%.0fW, Grid=%.0f/%.0fW, SOC=%.0f%%",
+                 telemetry.get("fve_production_w") or 0,
+                 telemetry.get("house_consumption_w") or 0,
+                 telemetry.get("grid_import_w") or 0,
+                 telemetry.get("grid_export_w") or 0,
+                 telemetry.get("battery_soc_pct") or 0)
+
+        payload = json.dumps(telemetry).encode()
 
         import urllib.request
         req = urllib.request.Request(
             f"{SERVER_URL}/api/telemetry/{API_KEY}",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
         )
         resp = urllib.request.urlopen(req, timeout=15)
         result = json.loads(resp.read())
-        return web.json_response({"ok": True, "entities": len(telemetry), "server_response": result})
+        return web.json_response({"ok": True, "mapped": {k: v for k, v in telemetry.items() if k != "timestamp" and v is not None}, "server_response": result})
     except Exception as e:
+        log.error("Telemetry push error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -641,6 +682,70 @@ async def scanner_loop():
         await asyncio.sleep(SCAN_INTERVAL * 60)
 
 
+# ── Telemetry push loop ──
+async def telemetry_loop():
+    """Push structured telemetry to Guard server every 5 minutes."""
+    await asyncio.sleep(30)  # wait for startup + first scan
+    while True:
+        if not API_KEY or not SERVER_URL:
+            await asyncio.sleep(300)
+            continue
+
+        try:
+            states = await _get_ha_states()
+            if states:
+                states_lookup = {}
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    state = s.get("state")
+                    if state not in ("unavailable", "unknown"):
+                        states_lookup[eid] = state
+
+                telemetry = {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "fve_production_w": _match_entity("fve_production_w", states_lookup),
+                    "house_consumption_w": _match_entity("house_consumption_w", states_lookup),
+                    "grid_import_w": _match_entity("grid_import_w", states_lookup),
+                    "grid_export_w": _match_entity("grid_export_w", states_lookup),
+                    "battery_soc_pct": _match_entity("battery_soc_pct", states_lookup),
+                    "battery_power_w": _match_entity("battery_power_w", states_lookup),
+                    "temperature": _match_entity("temperature", states_lookup),
+                }
+
+                # Fix negative grid/load values
+                grid = telemetry.get("grid_import_w")
+                if grid is not None and grid < 0:
+                    telemetry["grid_export_w"] = abs(grid)
+                    telemetry["grid_import_w"] = 0
+                load = telemetry.get("house_consumption_w")
+                if load is not None:
+                    telemetry["house_consumption_w"] = abs(load)
+
+                # Only push if we have at least one value
+                has_data = any(v is not None for k, v in telemetry.items() if k != "timestamp")
+                if has_data:
+                    import urllib.request
+                    payload = json.dumps(telemetry).encode()
+                    req = urllib.request.Request(
+                        f"{SERVER_URL}/api/telemetry/{API_KEY}",
+                        data=payload,
+                        headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
+                    )
+                    resp = urllib.request.urlopen(req, timeout=15)
+                    result = json.loads(resp.read())
+                    log.info("Telemetry push: PV=%.0fW SOC=%.0f%% → %s",
+                             telemetry.get("fve_production_w") or 0,
+                             telemetry.get("battery_soc_pct") or 0,
+                             result.get("success", False))
+                else:
+                    log.debug("Telemetry: no FVE data yet, skipping push")
+        except Exception as e:
+            if "1010" not in str(e) and "403" not in str(e):
+                log.warning("Telemetry push error: %s", e)
+
+        await asyncio.sleep(300)  #CC- Push every 5 minutes
+
+
 # ── Command polling loop ──
 async def command_poll_loop():
     """Poll MCP server for commands, execute them locally."""
@@ -878,6 +983,7 @@ async def main():
     # Start background tasks
     asyncio.create_task(scanner_loop())
     asyncio.create_task(command_poll_loop())
+    asyncio.create_task(telemetry_loop())
 
     runner = web.AppRunner(app)
     await runner.setup()
