@@ -43,8 +43,22 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 START_TIME = datetime.now()
+
+#CC- Explicit entity mapping from server KeyEntitiesJson (populated at startup)
+#CC- Maps telemetry field → HA entity_id. Takes priority over TELEMETRY_PATTERNS.
+KEY_ENTITIES = {}  # e.g. {"fve_production": "sensor.inverter_xxx_vykon", ...}
+
+#CC- KeyEntitiesJson field names → telemetry payload field names
+KEY_ENTITY_FIELD_MAP = {
+    "fve_production": "fve_production_w",
+    "house_consumption": "house_consumption_w",
+    "grid_import": "grid_import_w",
+    "grid_export": "grid_export_w",
+    "battery_soc": "battery_soc_pct",
+    "battery_power": "battery_power_w",
+}
 
 
 # ── Auth middleware ──
@@ -327,7 +341,16 @@ TELEMETRY_EXCLUDE = {
 
 
 def _match_entity(field, states_dict, all_states=None):
-    """Find first matching entity for a telemetry field. Respects exclude patterns."""
+    """Find first matching entity for a telemetry field. Uses KEY_ENTITIES first, then pattern fallback."""
+    #CC- Priority 1: explicit mapping from server KeyEntitiesJson
+    for ke_field, telem_field in KEY_ENTITY_FIELD_MAP.items():
+        if telem_field == field and ke_field in KEY_ENTITIES:
+            eid = KEY_ENTITIES[ke_field]
+            if eid in states_dict and _is_numeric(states_dict[eid]):
+                log.debug("KeyEntity match: %s → %s = %s", field, eid, states_dict[eid])
+                return float(states_dict[eid])
+
+    #CC- Priority 2: pattern matching fallback
     patterns = TELEMETRY_PATTERNS.get(field, [])
     excludes = TELEMETRY_EXCLUDE.get(field, [])
 
@@ -1021,8 +1044,34 @@ def create_app():
     return app
 
 
+def _fetch_key_entities():
+    """Fetch KeyEntitiesJson from Guard server. Sync, runs in thread."""
+    global KEY_ENTITIES
+    if not API_KEY or not SERVER_URL:
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"{SERVER_URL}/api/telemetry/{API_KEY}/config",
+            headers={"User-Agent": "GuardAgent/1.3"},
+        )
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read())
+        ke = data.get("key_entities") or {}
+        if ke:
+            KEY_ENTITIES.update(ke)
+            log.info("KeyEntities loaded: %s", {k: v.split(".")[-1] for k, v in ke.items()})
+        else:
+            log.info("No KeyEntities configured on server, using pattern matching")
+    except Exception as e:
+        log.warning("Failed to fetch KeyEntities: %s (will use pattern matching)", e)
+
+
 async def main():
     app = create_app()
+
+    #CC- Fetch explicit entity mapping from server before starting telemetry
+    await asyncio.to_thread(_fetch_key_entities)
 
     # Start background tasks
     asyncio.create_task(scanner_loop())
