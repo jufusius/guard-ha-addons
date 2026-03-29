@@ -306,19 +306,23 @@ async def _ha_request(method, path, body=None):
 
 #CC- Entity mapping: HA entity_id patterns → telemetry fields
 #CC- Agent auto-detects entities by matching these patterns against all HA states
+#CC- Order matters! First match wins. Put most specific patterns first.
 TELEMETRY_PATTERNS = {
-    "fve_production_w": ["_vykon", "_pv_power", "_solar_power", "homekit_homekit_pv", "_active_power"],
-    "house_consumption_w": ["_load", "_house_consumption", "_home_consumption", "homekit_homekit_load"],
-    "grid_import_w": ["_grid_import", "_import_power", "homekit_homekit_grid"],
-    "grid_export_w": ["_grid_export", "_export_power", "_feed_in"],
-    "battery_soc_pct": ["_state_of_charge", "_battery_soc", "_soc"],
-    "battery_power_w": ["_battery_0_power", "_battery_power", "_bat_power"],
+    "fve_production_w": ["homekit_homekit_pv", "_vykon", "_active_power"],
+    "house_consumption_w": ["homekit_homekit_load", "_house_consumption", "_home_consumption"],
+    "grid_import_w": ["homekit_homekit_grid", "_grid_import", "_import_power"],
+    "grid_export_w": ["homekit_sems_export"],  #CC- SEMS nemá real-time export watt senzor, jen kWh
+    "battery_soc_pct": ["_state_of_charge", "_battery_soc"],
+    "battery_power_w": ["homekit_homekit_battery", "_battery_0_power", "_battery_power"],
     "temperature": ["weather."],  #CC- Pouze weather entity — ne invertor teplota
 }
 
 #CC- Entity patterns to EXCLUDE (false positives)
 TELEMETRY_EXCLUDE = {
-    "temperature": ["inverter_", "_teplota"],  #CC- invertor teplota je 140°C, ne venkovní
+    "fve_production_w": ["_pv_string_", "_pv_1_", "_pv_2_"],  #CC- PV string voltage/current, ne celkový výkon
+    "house_consumption_w": ["_load_status", "_load_2"],  #CC- duplicitní/status entity
+    "battery_soc_pct": ["_state_of_health"],  #CC- SOH != SOC
+    "temperature": ["inverter_", "_teplota", "_bms_"],  #CC- invertor/BMS teplota
 }
 
 
@@ -375,15 +379,29 @@ async def handle_telemetry_push(request):
             "temperature": _match_entity("temperature", states_lookup, states),
         }
 
-        # Fix: grid value from SEMS can be negative (export) or positive (import)
+        #CC- Fix grid import/export: SEMS homekit_homekit_grid is unipolar
+        #CC- Positive = import, when load_status=1. Negative = export (rare in SEMS).
+        #CC- Calculate export from balance: export = max(0, pv - load - battery_charge)
         grid = telemetry.get("grid_import_w")
+        pv = telemetry.get("fve_production_w") or 0
+        load = telemetry.get("house_consumption_w") or 0
+
         if grid is not None and grid < 0:
             telemetry["grid_export_w"] = abs(grid)
             telemetry["grid_import_w"] = 0
-        elif grid is not None and telemetry.get("grid_export_w") is None:
+        elif grid is not None:
+            #CC- SEMS grid = import power. Export = PV - Load - Grid_Import (if PV > Load)
+            #CC- But simpler: if grid > 0 we're importing, export is 0
             telemetry["grid_export_w"] = 0
+            #CC- Double-check: if SEMS load_status exists and = -1, it means exporting
+            for eid, val in states_lookup.items():
+                if "load_status" in eid and _is_numeric(val) and float(val) < 0:
+                    #CC- Exporting: grid value is actually export
+                    telemetry["grid_export_w"] = grid
+                    telemetry["grid_import_w"] = 0
+                    break
 
-        # Fix: house consumption from SEMS can be negative
+        #CC- Fix: house consumption absolute value
         load = telemetry.get("house_consumption_w")
         if load is not None:
             telemetry["house_consumption_w"] = abs(load)
@@ -731,11 +749,18 @@ async def telemetry_loop():
                     "temperature": _match_entity("temperature", states_lookup, states),
                 }
 
-                # Fix negative grid/load values
+                #CC- Fix grid import/export + load absolute value
                 grid = telemetry.get("grid_import_w")
                 if grid is not None and grid < 0:
                     telemetry["grid_export_w"] = abs(grid)
                     telemetry["grid_import_w"] = 0
+                elif grid is not None:
+                    telemetry["grid_export_w"] = 0
+                    for eid, val in states_lookup.items():
+                        if "load_status" in eid and _is_numeric(val) and float(val) < 0:
+                            telemetry["grid_export_w"] = grid
+                            telemetry["grid_import_w"] = 0
+                            break
                 load = telemetry.get("house_consumption_w")
                 if load is not None:
                     telemetry["house_consumption_w"] = abs(load)
