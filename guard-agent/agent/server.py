@@ -962,6 +962,17 @@ async def _execute_command(command, payload):
         slug = payload.get("slug", "")
         return await _supervisor_cmd("POST", f"store/addons/{slug}/install")
 
+    elif command == "update_addon":
+        slug = payload.get("slug", "")
+        return await _supervisor_cmd("POST", f"addons/{slug}/update")
+
+    elif command == "restart_addon":
+        slug = payload.get("slug", "")
+        return await _supervisor_cmd("POST", f"addons/{slug}/restart")
+
+    elif command == "refresh_store":
+        return await _supervisor_cmd("POST", "store/reload")
+
     elif command == "get_network_info":
         return await _supervisor_cmd("GET", "network/info")
 
