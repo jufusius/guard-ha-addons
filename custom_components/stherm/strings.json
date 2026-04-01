@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "S-therm Remote přihlášení",
+        "description": "Zadejte přihlašovací údaje z aplikace {app_name}",
+        "data": {
+          "username": "E-mail",
+          "password": "Heslo"
+        }
+      },
+      "installation": {
+        "title": "Výběr instalace",
+        "description": "Zadejte ID instalace ({hint})",
+        "data": {
+          "installation_id": "Installation ID",
+          "installation_name": "Název (volitelné)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Neplatné přihlašovací údaje",
+      "cannot_connect": "Nepodařilo se připojit k tepelnému čerpadlu"
+    },
+    "abort": {
+      "already_configured": "Tato instalace je již nakonfigurována"
+    }
+  }
+}
