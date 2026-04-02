@@ -17,36 +17,42 @@ PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up S-therm from a config entry."""
-    #CC- Lazy import — stherm_client importuje pycognito/boto3/paho
-    from .stherm_client import SthermClient
-
-    client = SthermClient(
-        username=entry.data[CONF_USERNAME],
-        password=entry.data[CONF_PASSWORD],
-        installation_id=entry.data[CONF_INSTALLATION_ID],
-    )
-
-    if CONF_COMPONENT_ID in entry.data:
-        client.component_id = entry.data[CONF_COMPONENT_ID]
+    _LOGGER.warning("S-therm: === async_setup_entry START ===")
 
     try:
+        #CC- Lazy import — stherm_client importuje pycognito/boto3/paho
+        _LOGGER.warning("S-therm: importing stherm_client...")
+        from .stherm_client import SthermClient
+        _LOGGER.warning("S-therm: import OK")
+
+        client = SthermClient(
+            username=entry.data[CONF_USERNAME],
+            password=entry.data[CONF_PASSWORD],
+            installation_id=entry.data[CONF_INSTALLATION_ID],
+        )
+
+        if CONF_COMPONENT_ID in entry.data:
+            client.component_id = entry.data[CONF_COMPONENT_ID]
+
+        _LOGGER.warning("S-therm: calling async_setup...")
         await client.async_setup()
+        _LOGGER.warning("S-therm: async_setup OK, values=%d", len(client.values))
+
     except Exception as err:
-        _LOGGER.error("S-therm: Setup failed: %s", err)
+        _LOGGER.error("S-therm: Setup FAILED: %s", err, exc_info=True)
         raise
 
     async def async_update_data():
         """Fetch data from heat pump."""
         try:
             if not client._connected:
-                #CC- Reconnect — vše blocking, musí do executoru
                 loop = hass.loop
                 await loop.run_in_executor(None, client._blocking_authenticate_and_store)
                 await loop.run_in_executor(None, client._blocking_mqtt_connect)
+                import asyncio
                 for _ in range(20):
                     if client._connected:
                         break
-                    import asyncio
                     await asyncio.sleep(0.5)
             return await client.get_values()
         except Exception as err:
@@ -68,7 +74,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
     }
 
+    _LOGGER.warning("S-therm: forwarding platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _LOGGER.warning("S-therm: === async_setup_entry DONE ===")
     return True
 
 
