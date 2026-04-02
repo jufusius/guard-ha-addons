@@ -22,6 +22,7 @@ READ_PARAMS = [
     "h42", "h2", "c29", "h10", "h9", "h13", "h11", "c33", "h12", "h15",
     "c27", "h35", "h118", "h129", "c17", "h127", "h125", "h128", "h126",
     "h143", "h117", "c173", "c171", "c172", "h132",
+    "c19",  #CC- ekvitermní regulace (switch)
 ]
 
 #CC- Mapování parametrů na lidské názvy
