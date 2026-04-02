@@ -10,7 +10,9 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 
-import paho.mqtt.client as mqtt
+#CC- NEIMPORTOVAT paho/boto3 na top-level — dělají blocking I/O
+#CC- a HA OS Python 3.14 to detekuje jako chybu v event loop
+#CC- Import probíhá lazy uvnitř executor threadů
 
 from .const import (
     AWS_REGION,
@@ -47,6 +49,9 @@ class SthermClient:
         self._pending_response: asyncio.Future | None = None
         self._transaction_counter = 0
 
+        #CC- Event loop reference (set in async_setup)
+        self._loop = None
+
         #CC- Cached values
         self.values: dict[str, list[float]] = {}
         self.last_update: datetime | None = None
@@ -68,111 +73,48 @@ class SthermClient:
 
     # ==================== Authentication ====================
 
-    async def authenticate(self) -> None:
-        """Authenticate via Cognito SRP + get AWS IoT credentials."""
+    def _blocking_authenticate(self) -> dict:
+        """Blocking auth — runs in executor thread."""
         import boto3
         from pycognito import Cognito
 
-        _LOGGER.info("S-therm: Authenticating via Cognito SRP...")
-        loop = asyncio.get_event_loop()
-
-        #CC- Step 1: Cognito SRP auth
+        #CC- Step 1: Cognito SRP
         u = Cognito(
             COGNITO_USER_POOL_ID,
             COGNITO_CLIENT_ID,
             username=self._username,
         )
-        await loop.run_in_executor(None, u.authenticate, self._password)
-        self._id_token = u.id_token
-        _LOGGER.info("S-therm: Cognito auth successful")
+        u.authenticate(password=self._password)
+        id_token = u.id_token
 
-        #CC- Step 2: Identity Pool → AWS credentials
+        #CC- Step 2: Identity Pool → AWS temp credentials
         identity_client = boto3.client("cognito-identity", region_name=AWS_REGION)
 
-        id_resp = await loop.run_in_executor(
-            None,
-            lambda: identity_client.get_id(
-                IdentityPoolId=COGNITO_IDENTITY_POOL_ID,
-                Logins={
-                    f"cognito-idp.{AWS_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}": self._id_token
-                },
-            ),
+        id_resp = identity_client.get_id(
+            IdentityPoolId=COGNITO_IDENTITY_POOL_ID,
+            Logins={
+                f"cognito-idp.{AWS_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}": id_token
+            },
         )
-        self._identity_id = id_resp["IdentityId"]
+        identity_id = id_resp["IdentityId"]
 
-        creds_resp = await loop.run_in_executor(
-            None,
-            lambda: identity_client.get_credentials_for_identity(
-                IdentityId=self._identity_id,
-                Logins={
-                    f"cognito-idp.{AWS_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}": self._id_token
-                },
-            ),
+        creds_resp = identity_client.get_credentials_for_identity(
+            IdentityId=identity_id,
+            Logins={
+                f"cognito-idp.{AWS_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}": id_token
+            },
         )
         c = creds_resp["Credentials"]
-        self._access_key = c["AccessKeyId"]
-        self._secret_key = c["SecretKey"]
-        self._session_token = c["SessionToken"]
-        _LOGGER.info("S-therm: AWS credentials obtained, identity=%s", self._identity_id)
+
+        return {
+            "id_token": id_token,
+            "identity_id": identity_id,
+            "access_key": c["AccessKeyId"],
+            "secret_key": c["SecretKey"],
+            "session_token": c["SessionToken"],
+        }
 
     # ==================== MQTT ====================
-
-    async def connect_mqtt(self) -> None:
-        """Connect to AWS IoT MQTT and subscribe to topics."""
-        ts = int(time.time() * 1000)
-        self._session_topic = f"{self._installation_id}/{self._identity_id}-{ts}"
-        client_id = f"{self._identity_id}-{ts}"
-
-        ws_path = self._build_sigv4_ws_path()
-
-        self._mqtt_client = mqtt.Client(
-            client_id=client_id,
-            transport="websockets",
-            protocol=mqtt.MQTTv31,
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        )
-        self._mqtt_client.tls_set(cert_reqs=ssl.CERT_NONE)
-        self._mqtt_client.ws_set_options(
-            path=ws_path,
-            headers={"Sec-WebSocket-Protocol": "mqtt"},
-        )
-
-        loop = asyncio.get_event_loop()
-        connect_future = loop.create_future()
-
-        def on_connect(client, userdata, flags, reason_code, properties=None):
-            _LOGGER.info("S-therm: MQTT connected (rc=%s)", reason_code)
-            self._connected = True
-            client.subscribe(f"{self._session_topic}/installationResponse", 0)
-            client.subscribe(f"{self._installation_id}/installationNotifications", 0)
-            if not connect_future.done():
-                loop.call_soon_threadsafe(connect_future.set_result, True)
-
-        def on_message(client, userdata, msg):
-            try:
-                data = json.loads(msg.payload)
-                if msg.topic.endswith("/installationResponse"):
-                    if self._pending_response and not self._pending_response.done():
-                        loop.call_soon_threadsafe(self._pending_response.set_result, data)
-                elif msg.topic.endswith("/installationNotifications"):
-                    self._handle_params_update(data)
-            except Exception as ex:
-                _LOGGER.warning("S-therm: Error processing message: %s", ex)
-
-        def on_disconnect(client, userdata, flags, reason_code, properties=None):
-            _LOGGER.warning("S-therm: MQTT disconnected (rc=%s)", reason_code)
-            self._connected = False
-
-        self._mqtt_client.on_connect = on_connect
-        self._mqtt_client.on_message = on_message
-        self._mqtt_client.on_disconnect = on_disconnect
-
-        await loop.run_in_executor(
-            None, self._mqtt_client.connect, IOT_ENDPOINT, 443
-        )
-        self._mqtt_client.loop_start()
-
-        await asyncio.wait_for(connect_future, timeout=15)
 
     def disconnect(self) -> None:
         """Disconnect MQTT."""
@@ -249,8 +191,23 @@ class SthermClient:
 
     async def async_setup(self) -> None:
         """Full setup: auth → MQTT → discover → initial read."""
-        await self.authenticate()
-        await self.connect_mqtt()
+        loop = asyncio.get_running_loop()
+        self._loop = loop  #CC- Uložit loop pro použití v executor threadech
+
+        #CC- Auth je celý blocking (boto3/pycognito) — executor
+        await loop.run_in_executor(None, self._blocking_authenticate_and_store)
+
+        #CC- MQTT setup — paho je taky blocking
+        await loop.run_in_executor(None, self._blocking_mqtt_connect)
+
+        #CC- Wait for MQTT connection
+        for _ in range(30):
+            if self._connected:
+                break
+            await asyncio.sleep(0.5)
+
+        if not self._connected:
+            raise RuntimeError("MQTT connection timeout")
 
         #CC- Discover heat pump component
         components = await self.discover_components()
@@ -265,6 +222,66 @@ class SthermClient:
 
         #CC- Initial data read
         await self.get_values()
+
+    def _blocking_authenticate_and_store(self) -> None:
+        """Combined blocking auth — called from executor."""
+        result = self._blocking_authenticate()
+        self._id_token = result["id_token"]
+        self._identity_id = result["identity_id"]
+        self._access_key = result["access_key"]
+        self._secret_key = result["secret_key"]
+        self._session_token = result["session_token"]
+
+    def _blocking_mqtt_connect(self) -> None:
+        """Blocking MQTT setup — called from executor."""
+        import ssl
+        import paho.mqtt.client as mqtt
+
+        ts = int(time.time() * 1000)
+        self._session_topic = f"{self._installation_id}/{self._identity_id}-{ts}"
+        client_id = f"{self._identity_id}-{ts}"
+
+        ws_path = self._build_sigv4_ws_path()
+
+        self._mqtt_client = mqtt.Client(
+            client_id=client_id,
+            transport="websockets",
+            protocol=mqtt.MQTTv31,
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+        self._mqtt_client.tls_set(cert_reqs=ssl.CERT_NONE)
+        self._mqtt_client.ws_set_options(
+            path=ws_path,
+            headers={"Sec-WebSocket-Protocol": "mqtt"},
+        )
+
+        def on_connect(client, userdata, flags, reason_code, properties=None):
+            _LOGGER.info("S-therm: MQTT connected (rc=%s)", reason_code)
+            self._connected = True
+            client.subscribe(f"{self._session_topic}/installationResponse", 0)
+            client.subscribe(f"{self._installation_id}/installationNotifications", 0)
+
+        def on_message(client, userdata, msg):
+            try:
+                data = json.loads(msg.payload)
+                if msg.topic.endswith("/installationResponse"):
+                    if self._pending_response and not self._pending_response.done():
+                        self._loop.call_soon_threadsafe(self._pending_response.set_result, data)
+                elif msg.topic.endswith("/installationNotifications"):
+                    self._handle_params_update(data)
+            except Exception as ex:
+                _LOGGER.warning("S-therm: Error processing message: %s", ex)
+
+        def on_disconnect(client, userdata, flags, reason_code, properties=None):
+            _LOGGER.warning("S-therm: MQTT disconnected (rc=%s)", reason_code)
+            self._connected = False
+
+        self._mqtt_client.on_connect = on_connect
+        self._mqtt_client.on_message = on_message
+        self._mqtt_client.on_disconnect = on_disconnect
+
+        self._mqtt_client.connect(IOT_ENDPOINT, 443)
+        self._mqtt_client.loop_start()
 
     # ==================== Internal ====================
 

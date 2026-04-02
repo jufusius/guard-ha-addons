@@ -9,7 +9,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from datetime import timedelta
 
 from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_INSTALLATION_ID, CONF_COMPONENT_ID
-from .stherm_client import SthermClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,13 +17,15 @@ PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up S-therm from a config entry."""
+    #CC- Lazy import — stherm_client importuje pycognito/boto3/paho
+    from .stherm_client import SthermClient
+
     client = SthermClient(
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         installation_id=entry.data[CONF_INSTALLATION_ID],
     )
 
-    #CC- Nastavit component_id z uloženého config entry
     if CONF_COMPONENT_ID in entry.data:
         client.component_id = entry.data[CONF_COMPONENT_ID]
 
@@ -38,8 +39,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Fetch data from heat pump."""
         try:
             if not client._connected:
-                await client.authenticate()
-                await client.connect_mqtt()
+                #CC- Reconnect — vše blocking, musí do executoru
+                loop = hass.loop
+                await loop.run_in_executor(None, client._blocking_authenticate_and_store)
+                await loop.run_in_executor(None, client._blocking_mqtt_connect)
+                for _ in range(20):
+                    if client._connected:
+                        break
+                    import asyncio
+                    await asyncio.sleep(0.5)
             return await client.get_values()
         except Exception as err:
             raise UpdateFailed(f"S-therm update failed: {err}") from err
@@ -52,7 +60,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=timedelta(seconds=60),
     )
 
-    #CC- Initial data already fetched in async_setup
     coordinator.async_set_updated_data(client.values)
 
     hass.data.setdefault(DOMAIN, {})
