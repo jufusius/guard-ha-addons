@@ -46,14 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Fetch data from heat pump."""
         try:
             if not client._connected:
-                loop = hass.loop
-                await loop.run_in_executor(None, client._blocking_authenticate_and_store)
-                await loop.run_in_executor(None, client._blocking_mqtt_connect)
-                import asyncio
-                for _ in range(20):
-                    if client._connected:
-                        break
-                    await asyncio.sleep(0.5)
+                await client.async_setup()
             return await client.get_values()
         except Exception as err:
             raise UpdateFailed(f"S-therm update failed: {err}") from err

@@ -10,6 +10,7 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -45,7 +46,7 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TURN_OFF
     )
-    _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF, HVACMode.AUTO]
+    _attr_hvac_modes = [HVACMode.HEAT, HVACMode.COOL, HVACMode.OFF, HVACMode.AUTO]
     _enable_turn_on_off_backwards_compatibility = False
 
     def __init__(self, coordinator, client, entry) -> None:
@@ -64,9 +65,12 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
         """Return current HVAC mode."""
         v = self._client.values
         h2 = v.get("h2", [4])[0] if v.get("h2") else 4
+        c19 = v.get("c19", [0])[0] if v.get("c19") else 0
 
         if h2 == 4:  # VYPNUTO
             return HVACMode.OFF
+        elif c19 == 1:  # ekvitermní řízení aktivní
+            return HVACMode.AUTO
         elif h2 == 0:  # TOPENÍ
             return HVACMode.HEAT
         elif h2 == 1:  # CHLAZENÍ
@@ -125,7 +129,8 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
         """Set heating setpoint."""
         temp = kwargs.get("temperature")
         if temp is not None:
-            await self._client.set_parameter("h10", float(temp))
+            if not await self._client.set_parameter("h10", float(temp)):
+                raise HomeAssistantError("S-therm write failed for h10")
             await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -134,10 +139,18 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
             #CC- Nelze vypnout TČ přes MQTT — jen ekvitermní ovládání
             _LOGGER.warning("S-therm: Turn off not supported via MQTT, use S-therm Remote app")
         elif hvac_mode == HVACMode.HEAT:
-            await self._client.set_parameter("c29", 1)  # režim ON
+            if not await self._client.set_parameter("c19", 0):
+                raise HomeAssistantError("S-therm write failed for c19=0")
+            if not await self._client.set_parameter("c29", 1):
+                raise HomeAssistantError("S-therm write failed for c29=1")
             await self.coordinator.async_request_refresh()
+        elif hvac_mode == HVACMode.COOL:
+            _LOGGER.warning("S-therm: Cooling mode switch is not implemented yet")
         elif hvac_mode == HVACMode.AUTO:
-            await self._client.set_parameter("c19", 1)  # ekvitermní ON
+            if not await self._client.set_parameter("c29", 1):
+                raise HomeAssistantError("S-therm write failed for c29=1")
+            if not await self._client.set_parameter("c19", 1):
+                raise HomeAssistantError("S-therm write failed for c19=1")
             await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:

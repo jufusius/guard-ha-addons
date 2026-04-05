@@ -39,13 +39,11 @@ class SthermConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._password = user_input[CONF_PASSWORD]
 
             try:
-                #CC- Ověřit credentials + získat seznam instalací
+                # Validate credentials early, installation ID is entered in the next step.
                 self._client = SthermClient(self._username, self._password, "")
-                await self._client.authenticate()
-                await self._client.connect_mqtt()
-
-                #CC- Pokud úspěch, rovnou zkusit discovery
-                # Pro zjednodušení: použijeme ID z config flow
+                await self.hass.async_add_executor_job(
+                    self._client._blocking_authenticate_and_store
+                )
                 return await self.async_step_installation()
 
             except Exception as err:

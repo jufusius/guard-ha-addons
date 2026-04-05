@@ -5,6 +5,7 @@ import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -63,9 +64,11 @@ class SthermSwitch(CoordinatorEntity, SwitchEntity):
         return None
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self._client.set_parameter(self._param_code, 1)
+        if not await self._client.set_parameter(self._param_code, 1):
+            raise HomeAssistantError(f"S-therm write failed for {self._param_code}=1")
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self._client.set_parameter(self._param_code, 0)
+        if not await self._client.set_parameter(self._param_code, 0):
+            raise HomeAssistantError(f"S-therm write failed for {self._param_code}=0")
         await self.coordinator.async_request_refresh()
