@@ -22,7 +22,8 @@ READ_PARAMS = [
     "h42", "h2", "c29", "h10", "h9", "h13", "h11", "c33", "h12", "h15",
     "c27", "h35", "h118", "h129", "c17", "h127", "h125", "h128", "h126",
     "h143", "h117", "c173", "c171", "c172", "h132",
-    "c19",  #CC- ekvitermní regulace (switch)
+    "c19",  #CC- režim chlazení/topení (NE ekvitermní!)
+    "c22",  #CC- ekvitermní regulace (weather-dependent) — OVĚŘENO zápisem 2026-04-06
 ]
 
 #CC- Mapování parametrů na lidské názvy
@@ -36,9 +37,9 @@ PARAM_NAMES = {
     "h129": "Sání kompresoru",
     "h143": "Frekvence kompresoru",
     "h142": "Frekvence kompresoru 2",
-    "h42": "Provozní hodiny",
+    "h42": "ON/OFF přepínač",  #CC- 170=ON (0xAA), 85=OFF (0x55)
     "h132": "Počet startů kompresoru",
-    "h2": "Stav jednotky",
+    "h2": "Režim provozu",  #CC- 1=topení, 2=TUV, 3=chlaz+TUV, 4=top+TUV, 5=chlaz
     "h10": "Setpoint topení",
     "h13": "Setpoint TUV",
     "h9": "Setpoint pokojová",
@@ -46,24 +47,24 @@ PARAM_NAMES = {
     "h12": "Setpoint ECO",
     "h15": "Bod bivalence",
     "h35": "Defrost režim",
-    "c29": "Režim",
+    "c29": "S/bez TUV",
     "c17": "E-ohřívač TUV",
     "c27": "E-ohřívač topení",
     "c33": "Tichý režim",
-    "c19": "Ekvitermní regulace",
+    "c19": "Režim chlazení/topení",
     "c171": "Solární režim",
     "c172": "Chlazení povoleno",
     "c173": "Smart Grid",
+    "c22": "Ekvitermní regulace",  #CC- OVĚŘENO dle profilu GSH-140TRB2-3
 }
 
-#CC- Stav jednotky (h2) → text
+#CC- Provozní režim (h2) dle profilu GSH-140TRB2-3 (hodnoty 1-5)
 UNIT_STATES = {
-    0: "heating",
-    1: "cooling",
-    2: "dhw",
-    3: "defrost",
-    4: "off",
-    5: "standby",
+    1: "heating",
+    2: "hot_water",
+    3: "cooling_hot_water",
+    4: "heating_hot_water",
+    5: "cooling",
 }
 
 #CC- Teplotní senzory pro sensor platform

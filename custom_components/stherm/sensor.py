@@ -77,7 +77,8 @@ class SthermBaseSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def _values(self) -> dict:
-        return self._client.values
+        #CC- Číst z coordinator.data (kopie), ne z client.values (mutable)
+        return self.coordinator.data or {}
 
 
 class SthermTemperatureSensor(SthermBaseSensor):
@@ -139,14 +140,15 @@ class SthermStatusSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        vals = self._client.values.get("h2")
+        data = self.coordinator.data or {}
+        vals = data.get("h2")
         if vals and len(vals) > 0:
             return UNIT_STATES.get(int(vals[0]), f"unknown_{vals[0]}")
         return "unavailable"
 
     @property
     def extra_state_attributes(self) -> dict:
-        v = self._client.values
+        v = self.coordinator.data or {}
         attrs = {}
 
         def _get(code):
@@ -164,10 +166,10 @@ class SthermStatusSensor(CoordinatorEntity, SensorEntity):
         if (hrs := _get("h42")) is not None:
             attrs["provozni_hodiny"] = hrs
 
-        #CC- Coil statusy
-        for code, label in [("c29", "rezim"), ("c17", "ohrivac_tuv"),
+        #CC- Coil statusy (dle profilu GSH-140TRB2-3)
+        for code, label in [("c29", "s_tuv"), ("c17", "ohrivac_tuv"),
                             ("c27", "ohrivac_topeni"), ("c33", "tichy_rezim"),
-                            ("c19", "ekvitermni")]:
+                            ("c22", "ekvitermni"), ("c19", "rezim_chlazeni")]:
             val = _get(code)
             if val is not None:
                 attrs[label] = "on" if val == 1 else "off"
