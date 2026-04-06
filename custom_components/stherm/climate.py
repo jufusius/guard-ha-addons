@@ -63,49 +63,47 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
     @property
     def hvac_mode(self) -> HVACMode:
         """Return current HVAC mode."""
-        v = self._client.values
+        v = (self.coordinator.data or {})
+        #CC- h2: 1=heat, 2=dhw, 3=cool+dhw, 4=heat+dhw, 5=cool (profil GSH-140TRB2-3)
         h2 = v.get("h2", [4])[0] if v.get("h2") else 4
-        c19 = v.get("c19", [0])[0] if v.get("c19") else 0
+        c22 = v.get("c22", [0])[0] if v.get("c22") else 0
 
-        if h2 == 4:  # VYPNUTO
-            return HVACMode.OFF
-        elif c19 == 1:  # ekvitermní řízení aktivní
+        if c22 == 1:  #CC- ekvitermní regulace aktivní
             return HVACMode.AUTO
-        elif h2 == 0:  # TOPENÍ
+        elif h2 in (1, 4):  #CC- 1=topení, 4=topení+TUV
             return HVACMode.HEAT
-        elif h2 == 1:  # CHLAZENÍ
+        elif h2 in (5, 3):  #CC- 5=chlazení, 3=chlazení+TUV
             return HVACMode.COOL
-        else:  # TUV, DEFROST, STANDBY → auto
+        else:  #CC- 2=TUV → auto
             return HVACMode.AUTO
 
     @property
     def current_temperature(self) -> float | None:
         """Return outdoor temperature."""
-        vals = self._client.values.get("h118")
+        vals = (self.coordinator.data or {}).get("h118")
         return vals[0] if vals else None
 
     @property
     def target_temperature(self) -> float | None:
         """Return heating setpoint."""
-        vals = self._client.values.get("h10")
+        vals = (self.coordinator.data or {}).get("h10")
         return vals[0] if vals else None
 
     @property
     def hvac_action(self) -> str | None:
         """Return current action."""
-        v = self._client.values
+        v = (self.coordinator.data or {})
         freq = v.get("h143", [0])[0] if v.get("h143") else 0
         h2 = v.get("h2", [4])[0] if v.get("h2") else 4
 
-        if h2 == 4:
-            return "off"
         if freq > 0:
-            return "heating" if h2 == 0 else "cooling"
+            #CC- h2: 1,4=topení, 5,3=chlazení, 2=dhw
+            return "heating" if h2 in (1, 4) else "cooling"
         return "idle"
 
     @property
     def extra_state_attributes(self) -> dict:
-        v = self._client.values
+        v = (self.coordinator.data or {})
         attrs = {}
 
         def _get(code):
@@ -120,8 +118,8 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
             attrs["dhw_temp"] = t
         if (freq := _get("h143")) is not None:
             attrs["compressor_hz"] = freq
-        if (c19 := _get("c19")) is not None:
-            attrs["equithermal"] = "on" if c19 == 1 else "off"
+        if (c22 := _get("c22")) is not None:
+            attrs["equithermal"] = "on" if c22 == 1 else "off"
 
         return attrs
 
@@ -136,21 +134,19 @@ class SthermClimate(CoordinatorEntity, ClimateEntity):
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode (limited — TČ režim je komplexní)."""
         if hvac_mode == HVACMode.OFF:
-            #CC- Nelze vypnout TČ přes MQTT — jen ekvitermní ovládání
+            #CC- Nelze vypnout TČ přes MQTT (h42 vyžaduje speciální hodnoty 170/85)
             _LOGGER.warning("S-therm: Turn off not supported via MQTT, use S-therm Remote app")
         elif hvac_mode == HVACMode.HEAT:
-            if not await self._client.set_parameter("c19", 0):
-                raise HomeAssistantError("S-therm write failed for c19=0")
-            if not await self._client.set_parameter("c29", 1):
-                raise HomeAssistantError("S-therm write failed for c29=1")
+            #CC- Vypnout ekvitermu (c22=0) → přímé topení dle setpointu
+            if not await self._client.set_parameter("c22", 0):
+                raise HomeAssistantError("S-therm write failed for c22=0")
             await self.coordinator.async_request_refresh()
         elif hvac_mode == HVACMode.COOL:
             _LOGGER.warning("S-therm: Cooling mode switch is not implemented yet")
         elif hvac_mode == HVACMode.AUTO:
-            if not await self._client.set_parameter("c29", 1):
-                raise HomeAssistantError("S-therm write failed for c29=1")
-            if not await self._client.set_parameter("c19", 1):
-                raise HomeAssistantError("S-therm write failed for c19=1")
+            #CC- Zapnout ekvitermu (c22=1) → automatická regulace dle venkovní teploty
+            if not await self._client.set_parameter("c22", 1):
+                raise HomeAssistantError("S-therm write failed for c22=1")
             await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:

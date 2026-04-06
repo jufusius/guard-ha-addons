@@ -166,13 +166,23 @@ class SthermClient:
                         self.values[k] = v
 
         self.last_update = datetime.now(timezone.utc)
+        #CC- Debug: logovat stav coil parametrů po každém čtení
+        coils = {k: v for k, v in self.values.items() if k.startswith("c")}
+        _LOGGER.warning("S-therm: GET_VALUES coils: %s", coils)
         self._notify_update()
         return self.values
 
     async def set_parameter(self, param_code: str, value: float) -> bool:
         """Write a parameter value to heat pump."""
+        _LOGGER.warning("S-therm: set_parameter(%s, %s) called, connected=%s, component=%s",
+                        param_code, value, self._connected, self._component_id)
         if not self._component_id:
             raise RuntimeError("Component ID not set")
+
+        #CC- Gateway vyžaduje hodnoty jako STRING v JSON! ("c22":"0", ne "c22":0)
+        #CC- Jinak vrací targetStatus=3 (reject). Ověřeno 2026-04-06.
+        write_val = str(int(value)) if param_code.startswith("c") else str(value)
+        _LOGGER.warning("S-therm: set_parameter write_val=%r (string)", write_val)
 
         resp = await self._mqtt_request({
             "transactionId": str(self._next_tid()),
@@ -180,14 +190,21 @@ class SthermClient:
                 "name": "PARAMS_MODIFICATION",
                 "targets": [{
                     "component": self._component_id,
-                    "parameters": {param_code: [value]},
+                    "parameters": {param_code: write_val},
                 }],
             }],
         })
 
-        status = resp.get("operations", [{}])[0].get("statusCode", -1)
-        _LOGGER.info("S-therm: SetParameter %s=%s, status=%s", param_code, value, status)
-        return status == 0
+        #CC- Logovat kompletní odpověď pro debug (operations + targets level)
+        _LOGGER.warning("S-therm: SetParameter FULL response: %s", json.dumps(resp, default=str))
+        op = resp.get("operations", [{}])[0]
+        op_status = op.get("statusCode", -1)
+        targets = op.get("targets", [{}])
+        target_status = targets[0].get("statusCode", -1) if targets else -1
+        target_params = targets[0].get("parameters", {}) if targets else {}
+        _LOGGER.warning("S-therm: SetParameter %s=%s → op_status=%s, target_status=%s, target_params=%s",
+                        param_code, value, op_status, target_status, target_params)
+        return op_status == 0
 
     async def async_setup(self) -> None:
         """Full setup: auth → MQTT → discover → initial read."""
@@ -306,16 +323,22 @@ class SthermClient:
 
     async def _mqtt_request(self, payload: dict, timeout: float = 15) -> dict:
         """Send MQTT request and wait for response."""
-        loop = asyncio.get_event_loop()
-        self._pending_response = loop.create_future()
+        if not self._connected:
+            _LOGGER.warning("S-therm: MQTT not connected, attempting reconnect...")
+            await self.async_setup()
+            if not self._connected:
+                raise RuntimeError("S-therm: MQTT reconnect failed")
+
+        self._pending_response = self._loop.create_future()
 
         topic = f"{self._session_topic}/installationRequest"
+        _LOGGER.warning("S-therm: Publishing to %s", topic)
         self._mqtt_client.publish(topic, json.dumps(payload))
 
         try:
             return await asyncio.wait_for(self._pending_response, timeout=timeout)
         except asyncio.TimeoutError:
-            _LOGGER.warning("S-therm: MQTT request timeout")
+            _LOGGER.warning("S-therm: MQTT request timeout (topic=%s)", topic)
             raise
 
     def _next_tid(self) -> int:

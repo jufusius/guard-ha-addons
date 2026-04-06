@@ -13,9 +13,9 @@ from .const import DOMAIN, MANUFACTURER, CONF_INSTALLATION_NAME
 
 _LOGGER = logging.getLogger(__name__)
 
-#CC- Přepínače mapované na coil parametry
+#CC- Přepínače mapované na coil parametry (dle profilu GSH-140TRB2-3)
 SWITCHES = [
-    ("c19", "equithermal", "Ekvitermní regulace", "mdi:thermostat-auto"),
+    ("c22", "equithermal", "Ekvitermní regulace", "mdi:thermostat-auto"),
     ("c33", "quiet_mode", "Tichý režim", "mdi:volume-off"),
     ("c17", "dhw_heater", "E-ohřívač TUV", "mdi:water-boiler-alert"),
     ("c27", "heating_heater", "E-ohřívač topení", "mdi:radiator"),
@@ -58,17 +58,27 @@ class SthermSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        vals = self._client.values.get(self._param_code)
+        #CC- Číst z coordinator.data (kopie), ne z client.values (mutable reference)
+        data = self.coordinator.data or {}
+        vals = data.get(self._param_code)
         if vals and len(vals) > 0:
             return vals[0] == 1
         return None
 
     async def async_turn_on(self, **kwargs) -> None:
+        _LOGGER.warning("S-therm switch: turn_on %s (param=%s)", self.entity_id, self._param_code)
         if not await self._client.set_parameter(self._param_code, 1):
             raise HomeAssistantError(f"S-therm write failed for {self._param_code}=1")
-        await self.coordinator.async_request_refresh()
+        #CC- Okamžitě aktualizovat lokální stav — zachovat plný tuple [val, min, max]
+        current = self._client.values.get(self._param_code, [0, 0, 1])
+        self._client.values[self._param_code] = [1] + current[1:]
+        self.coordinator.async_set_updated_data(dict(self._client.values))
 
     async def async_turn_off(self, **kwargs) -> None:
+        _LOGGER.warning("S-therm switch: turn_off %s (param=%s)", self.entity_id, self._param_code)
         if not await self._client.set_parameter(self._param_code, 0):
             raise HomeAssistantError(f"S-therm write failed for {self._param_code}=0")
-        await self.coordinator.async_request_refresh()
+        #CC- Okamžitě aktualizovat lokální stav — zachovat plný tuple [val, min, max]
+        current = self._client.values.get(self._param_code, [1, 0, 1])
+        self._client.values[self._param_code] = [0] + current[1:]
+        self.coordinator.async_set_updated_data(dict(self._client.values))
