@@ -43,7 +43,14 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.3.0"
+VERSION = "1.4.1"
+
+#CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
+def _guard_headers(extra=None):
+    h = {"Content-Type": "application/json", "User-Agent": f"GuardAgent/{VERSION}", "X-Agent-Key": API_KEY}
+    if extra:
+        h.update(extra)
+    return h
 START_TIME = datetime.now()
 
 #CC- Explicit entity mapping from server KeyEntitiesJson (populated at startup)
@@ -324,10 +331,13 @@ async def _ha_request(method, path, body=None):
 TELEMETRY_PATTERNS = {
     "fve_production_w": ["homekit_homekit_pv", "_vykon", "_active_power"],
     "house_consumption_w": ["homekit_homekit_load", "_house_consumption", "_home_consumption"],
-    "grid_import_w": ["homekit_homekit_grid", "_grid_import", "_import_power"],
-    "grid_export_w": ["homekit_sems_export"],  #CC- SEMS nemá real-time export watt senzor, jen kWh
+    #CC- Grid import/export are derived from physics (_resolve_grid_from_balance),
+    #CC- NOT from mapped sensors — SEMS homekit_*_grid is unsigned magnitude and
+    #CC- homekit_sems_import/export are daily cumulative kWh (not watts).
+    "grid_import_w": ["_grid_import_power", "_grid_active_power_import"],
+    "grid_export_w": ["_grid_export_power", "_grid_active_power_export"],
     "battery_soc_pct": ["_state_of_charge", "_battery_soc"],
-    "battery_power_w": ["homekit_homekit_battery", "_battery_0_power", "_battery_power"],
+    "battery_power_w": ["_battery_0_power", "_battery_power"],
     "temperature": ["weather."],  #CC- Pouze weather entity — ne invertor teplota
 }
 
@@ -338,6 +348,38 @@ TELEMETRY_EXCLUDE = {
     "battery_soc_pct": ["_state_of_health"],  #CC- SOH != SOC
     "temperature": ["inverter_", "_teplota", "_bms_"],  #CC- invertor/BMS teplota
 }
+
+
+def _resolve_grid_from_balance(telemetry):
+    """
+    Compute grid_import_w / grid_export_w from energy balance (physics).
+    More reliable than mapped sensors — SEMS homekit_*_grid is unsigned magnitude,
+    and homekit_sems_import/export are DAILY kWh counters (not instantaneous W).
+
+    Convention: battery_power_w > 0 = DISCHARGING (supplies load) — GoodWe/Sinclair default.
+                battery_power_w < 0 = CHARGING (draws from pv/grid).
+
+    grid_balance = load - pv - battery_discharge
+      > 0 → importing (need supply from grid)
+      < 0 → exporting (surplus to grid)
+
+    Only applies when pv, load AND battery_power_w are all known — otherwise
+    leaves the mapped values untouched (backward compatible fallback).
+    """
+    pv = telemetry.get("fve_production_w")
+    load = telemetry.get("house_consumption_w")
+    batt = telemetry.get("battery_power_w")
+    if pv is None or load is None or batt is None:
+        return  # keep mapped values as-is
+
+    load_abs = abs(load)
+    balance = load_abs - pv - batt
+    if balance >= 0:
+        telemetry["grid_import_w"] = round(balance, 1)
+        telemetry["grid_export_w"] = 0.0
+    else:
+        telemetry["grid_import_w"] = 0.0
+        telemetry["grid_export_w"] = round(-balance, 1)
 
 
 def _match_entity(field, states_dict, all_states=None):
@@ -402,32 +444,15 @@ async def handle_telemetry_push(request):
             "temperature": _match_entity("temperature", states_lookup, states),
         }
 
-        #CC- Fix grid import/export: SEMS homekit_homekit_grid is unipolar
-        #CC- Positive = import, when load_status=1. Negative = export (rare in SEMS).
-        #CC- Calculate export from balance: export = max(0, pv - load - battery_charge)
-        grid = telemetry.get("grid_import_w")
-        pv = telemetry.get("fve_production_w") or 0
-        load = telemetry.get("house_consumption_w") or 0
-
-        if grid is not None and grid < 0:
-            telemetry["grid_export_w"] = abs(grid)
-            telemetry["grid_import_w"] = 0
-        elif grid is not None:
-            #CC- SEMS grid = import power. Export = PV - Load - Grid_Import (if PV > Load)
-            #CC- But simpler: if grid > 0 we're importing, export is 0
-            telemetry["grid_export_w"] = 0
-            #CC- Double-check: if SEMS load_status exists and = -1, it means exporting
-            for eid, val in states_lookup.items():
-                if "load_status" in eid and _is_numeric(val) and float(val) < 0:
-                    #CC- Exporting: grid value is actually export
-                    telemetry["grid_export_w"] = grid
-                    telemetry["grid_import_w"] = 0
-                    break
-
-        #CC- Fix: house consumption absolute value
+        #CC- House consumption must be unsigned (abs) before any balance calculation
         load = telemetry.get("house_consumption_w")
         if load is not None:
             telemetry["house_consumption_w"] = abs(load)
+
+        #CC- Derive grid_import_w / grid_export_w from physics (pv - load - battery).
+        #CC- Overrides mapped sensors which may be: unsigned magnitude (homekit_homekit_grid),
+        #CC- daily cumulative kWh (homekit_sems_import/export), or plain missing.
+        _resolve_grid_from_balance(telemetry)
 
         log.info("Telemetry mapped: PV=%.0fW, Load=%.0fW, Grid=%.0f/%.0fW, SOC=%.0f%%",
                  telemetry.get("fve_production_w") or 0,
@@ -440,9 +465,9 @@ async def handle_telemetry_push(request):
 
         import urllib.request
         req = urllib.request.Request(
-            f"{SERVER_URL}/api/telemetry/{API_KEY}",
+            f"{SERVER_URL}/api/v2/telemetry",
             data=payload,
-            headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
+            headers=_guard_headers(),
         )
         resp = urllib.request.urlopen(req, timeout=15)
         result = json.loads(resp.read())
@@ -724,9 +749,9 @@ async def scanner_loop():
                     import urllib.request
                     payload = json.dumps({"devices": devices}).encode()
                     req = urllib.request.Request(
-                        f"{SERVER_URL}/api/devices/{API_KEY}",
+                        f"{SERVER_URL}/api/v2/devices",
                         data=payload,
-                        headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
+                        headers=_guard_headers(),
                     )
                     resp = urllib.request.urlopen(req, timeout=15)
                     result = json.loads(resp.read())
@@ -772,21 +797,11 @@ async def telemetry_loop():
                     "temperature": _match_entity("temperature", states_lookup, states),
                 }
 
-                #CC- Fix grid import/export + load absolute value
-                grid = telemetry.get("grid_import_w")
-                if grid is not None and grid < 0:
-                    telemetry["grid_export_w"] = abs(grid)
-                    telemetry["grid_import_w"] = 0
-                elif grid is not None:
-                    telemetry["grid_export_w"] = 0
-                    for eid, val in states_lookup.items():
-                        if "load_status" in eid and _is_numeric(val) and float(val) < 0:
-                            telemetry["grid_export_w"] = grid
-                            telemetry["grid_import_w"] = 0
-                            break
+                #CC- House consumption abs, then derive grid from energy balance (physics).
                 load = telemetry.get("house_consumption_w")
                 if load is not None:
                     telemetry["house_consumption_w"] = abs(load)
+                _resolve_grid_from_balance(telemetry)
 
                 # Only push if we have at least one value
                 has_data = any(v is not None for k, v in telemetry.items() if k != "timestamp")
@@ -794,9 +809,9 @@ async def telemetry_loop():
                     import urllib.request
                     payload = json.dumps(telemetry).encode()
                     req = urllib.request.Request(
-                        f"{SERVER_URL}/api/telemetry/{API_KEY}",
+                        f"{SERVER_URL}/api/v2/telemetry",
                         data=payload,
-                        headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
+                        headers=_guard_headers(),
                     )
                     resp = urllib.request.urlopen(req, timeout=15)
                     result = json.loads(resp.read())
@@ -828,7 +843,7 @@ async def command_poll_loop():
             # Poll for pending commands
             req = urlreq.Request(
                 f"{SERVER_URL}/api/agent/{API_KEY}/commands",
-                headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
+                headers=_guard_headers(),
             )
             resp = urlreq.urlopen(req, timeout=15)
             data = json.loads(resp.read())
@@ -876,7 +891,7 @@ async def command_poll_loop():
                     req2 = urlreq.Request(
                         f"{SERVER_URL}/api/agent/{API_KEY}/result",
                         data=result_data,
-                        headers={"Content-Type": "application/json", "User-Agent": "GuardAgent/1.1"},
+                        headers=_guard_headers(),
                     )
                     urlreq.urlopen(req2, timeout=15)
                     log.info("  → reported to server")
@@ -979,6 +994,19 @@ async def _execute_command(command, payload):
     elif command == "get_host_info":
         return await _supervisor_cmd("GET", "host/info")
 
+    elif command == "verify_entity_states":
+        #CC- Read specific entity states for cross-layer verification (AutomationHealthService)
+        entity_ids = payload.get("entity_ids", [])
+        states = await _get_ha_states()
+        if not states:
+            return {"error": "no HA states"}
+        lookup = {s["entity_id"]: s.get("state") for s in states
+                  if s.get("state") not in ("unavailable", "unknown")}
+        result = {}
+        for eid in entity_ids:
+            result[eid] = lookup.get(eid, "not_found")
+        return {"states": result, "entity_count": len(result)}
+
     else:
         return {"error": f"unknown command: {command}"}
 
@@ -1063,8 +1091,8 @@ def _fetch_key_entities():
     try:
         import urllib.request
         req = urllib.request.Request(
-            f"{SERVER_URL}/api/telemetry/{API_KEY}/config",
-            headers={"User-Agent": "GuardAgent/1.3"},
+            f"{SERVER_URL}/api/v2/telemetry/config",
+            headers=_guard_headers(),
         )
         resp = urllib.request.urlopen(req, timeout=15)
         data = json.loads(resp.read())
