@@ -994,6 +994,71 @@ async def _execute_command(command, payload):
     elif command == "get_host_info":
         return await _supervisor_cmd("GET", "host/info")
 
+    elif command == "install_cloudflared":
+        #CC- Sprint E (2026-04-21): T2 auto-provisioning. McpHomeServer enqueue tento command po ProvisionAsync.
+        #CC- Payload: { tunnel_id, tunnel_name, hostname, tunnel_token }.
+        #CC- Postup: 1) zaloha tokenu do /share/guard/cloudflared-token.json (recovery),
+        #CC-          2) supervisor install Cloudflared addonu (community repo brenner-tobias/ha-addons),
+        #CC-          3) addon options {external_hostname, tunnel_token, additional_hosts:[]},
+        #CC-          4) start addonu.
+        #CC- Idempotentni: pokud addon uz bezi se stejnym tokenem, jen restart.
+        token = payload.get("tunnel_token", "")
+        hostname = payload.get("hostname", "")
+        tunnel_id = payload.get("tunnel_id", "")
+        if not token or not hostname:
+            return {"error": "missing tunnel_token or hostname in payload"}
+
+        #CC- Recovery backup (token je sensitive — restrictive perms)
+        try:
+            from pathlib import Path as _P
+            backup_dir = _P("/share/guard")
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_file = backup_dir / "cloudflared-token.json"
+            backup_file.write_text(json.dumps({
+                "tunnel_id": tunnel_id,
+                "hostname": hostname,
+                "tunnel_token": token,
+                "saved_at": datetime.now().isoformat(),
+            }), encoding="utf-8")
+            try: backup_file.chmod(0o600)
+            except: pass
+            log.info("  install_cloudflared: backup saved to %s", backup_file)
+        except Exception as e:
+            log.warning("  install_cloudflared: backup failed: %s", e)
+
+        #CC- Slug pro Cloudflared addon — nejcastejsi community repo. TODO ověřit při prvním ostrém deploy.
+        addon_slug = payload.get("addon_slug", "a0d7b954_cloudflared")
+
+        #CC- Step 1: install (idempotentni — pokud uz instalovany, vrati 400 ktere ignorujeme)
+        install_resp = await _supervisor_cmd("POST", f"store/addons/{addon_slug}/install")
+        log.info("  install_cloudflared: install response: %s", json.dumps(install_resp)[:200])
+
+        #CC- Step 2: set options s tokenem + hostname
+        options_resp = await _supervisor_cmd("POST", f"addons/{addon_slug}/options", {
+            "options": {
+                "external_hostname": hostname,
+                "tunnel_token": token,
+                "additional_hosts": [],
+                "nginx_proxy_manager": False,
+                "data_folder": "addon_configs/a0d7b954_cloudflared"
+            }
+        })
+        log.info("  install_cloudflared: options response: %s", json.dumps(options_resp)[:200])
+
+        #CC- Step 3: start (nebo restart pokud uz bezel)
+        start_resp = await _supervisor_cmd("POST", f"addons/{addon_slug}/restart")
+        log.info("  install_cloudflared: restart response: %s", json.dumps(start_resp)[:200])
+
+        return {
+            "ok": True,
+            "addon_slug": addon_slug,
+            "hostname": hostname,
+            "tunnel_id": tunnel_id,
+            "install": install_resp.get("result", install_resp),
+            "options": options_resp.get("result", options_resp),
+            "restart": start_resp.get("result", start_resp),
+        }
+
     elif command == "verify_entity_states":
         #CC- Read specific entity states for cross-layer verification (AutomationHealthService)
         entity_ids = payload.get("entity_ids", [])

@@ -1,6 +1,6 @@
 name: "Guard Agent"
-description: "Guard IoT remote management agent — network scanning, file management, shell execution, integration control, telemetry."
-version: "1.4.2"
+description: "Guard IoT remote management agent — network scanning, file management, shell execution, integration control, telemetry, T2 cloudflared auto-install."
+version: "1.5.0"
 slug: guard-agent
 url: "https://github.com/jufusius/guard-ha-addons"
 

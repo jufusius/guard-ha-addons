@@ -1,6 +1,8 @@
 """S-therm Remote integration for Home Assistant."""
 
+import asyncio
 import logging
+import subprocess
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -14,12 +16,31 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.SWITCH]
 
+#CC- Requirements z manifest.json odstraněny (RPi4 timeout na kompilaci)
+#CC- Instalace probíhá ručně v executoru při prvním setupu
+REQUIRED_PACKAGES = ["pycognito>=2024.12.0", "paho-mqtt>=2.0.0"]
+
+
+def _ensure_deps():
+    """Install missing dependencies in background thread (blocking OK here)."""
+    for pkg in REQUIRED_PACKAGES:
+        name = pkg.split(">=")[0].split("==")[0].replace("-", "_")
+        try:
+            __import__(name)
+        except ImportError:
+            _LOGGER.warning("S-therm: installing missing dep %s ...", pkg)
+            subprocess.check_call(["pip", "install", "--quiet", pkg])
+            _LOGGER.warning("S-therm: %s installed OK", pkg)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up S-therm from a config entry."""
     _LOGGER.warning("S-therm: === async_setup_entry START ===")
 
     try:
+        #CC- Nainstalovat deps v executoru (blocking pip install)
+        await asyncio.get_running_loop().run_in_executor(None, _ensure_deps)
+
         #CC- Lazy import — stherm_client importuje pycognito/boto3/paho
         _LOGGER.warning("S-therm: importing stherm_client...")
         from .stherm_client import SthermClient
@@ -47,7 +68,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             if not client._connected:
                 await client.async_setup()
-            return await client.get_values()
+            await client.get_values()
+            #CC- Vracet KOPII dict — coordinator porovnává old vs new referenci
+            #CC- Bez kopie je old_data is new_data (stejný mutable dict) → žádný update
+            return dict(client.values)
         except Exception as err:
             raise UpdateFailed(f"S-therm update failed: {err}") from err
 
@@ -59,7 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=timedelta(seconds=60),
     )
 
-    coordinator.async_set_updated_data(client.values)
+    coordinator.async_set_updated_data(dict(client.values))
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
