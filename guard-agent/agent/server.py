@@ -43,7 +43,8 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.4.1"
+VERSION = "1.6.0"
+ENROLL_SENTINEL = "/data/enrolled.json"
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
 def _guard_headers(extra=None):
@@ -1171,11 +1172,183 @@ def _fetch_key_entities():
         log.warning("Failed to fetch KeyEntities: %s (will use pattern matching)", e)
 
 
+async def _enroll_once():
+    """
+    M3 (2026-05-01) — one-shot bidirectional enrollment.
+    Agent at first start mints HA LLAT via Supervisor proxy and pushes
+    {ha_url, ha_token, ha_version, install_type, agent_version, hostname,
+     local_ip, timezone} to MCP /api/agent/{apiKey}/enroll.
+
+    Idempotent via /data/enrolled.json sentinel. Fail-soft: any error is logged
+    and retried on next addon restart — never blocks startup.
+    Hard timeout: every step has a per-call timeout, total bounded ~30s.
+    """
+    if not API_KEY or not SERVER_URL or not SUPERVISOR_TOKEN:
+        log.info("Enroll: skipped (missing API_KEY / SERVER_URL / SUPERVISOR_TOKEN)")
+        return
+
+    #CC- Sentinel — skip if enrolled within last 7d (re-enrolls weekly to refresh metadata)
+    try:
+        if os.path.exists(ENROLL_SENTINEL):
+            sent = json.loads(open(ENROLL_SENTINEL, "r", encoding="utf-8").read())
+            ts = datetime.fromisoformat(sent.get("enrolled_at", "1970-01-01T00:00:00"))
+            if datetime.now() - ts < timedelta(days=7):
+                log.info("Enroll: already done at %s, skipping (sentinel)", ts.isoformat())
+                return
+    except Exception as e:
+        log.warning("Enroll: sentinel read failed (%s), proceeding", e)
+
+    headers_sup = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}",
+                   "Content-Type": "application/json"}
+
+    try:
+        async with ClientSession(timeout=__import__("aiohttp").ClientTimeout(total=20)) as session:
+            #CC- 1) HA config — external_url / internal_url / version / time_zone
+            ha_url = None
+            ha_version = None
+            timezone = None
+            try:
+                async with session.get(f"{SUPERVISOR_URL}/core/api/config", headers=headers_sup) as r:
+                    if r.status == 200:
+                        cfg = await r.json()
+                        ha_url = (cfg.get("external_url") or cfg.get("internal_url") or "").rstrip("/")
+                        ha_version = cfg.get("version")
+                        timezone = cfg.get("time_zone")
+            except Exception as e:
+                log.warning("Enroll: /core/api/config failed: %s", e)
+
+            #CC- 2) Host info — hostname, local IP
+            hostname = None
+            local_ip = None
+            try:
+                async with session.get(f"{SUPERVISOR_URL}/host/info", headers=headers_sup) as r:
+                    if r.status == 200:
+                        d = (await r.json()).get("data", {})
+                        hostname = d.get("hostname")
+            except Exception as e:
+                log.warning("Enroll: /host/info failed: %s", e)
+            try:
+                async with session.get(f"{SUPERVISOR_URL}/network/info", headers=headers_sup) as r:
+                    if r.status == 200:
+                        d = (await r.json()).get("data", {})
+                        for iface in d.get("interfaces", []):
+                            if iface.get("primary"):
+                                ipv4 = iface.get("ipv4") or {}
+                                addrs = ipv4.get("address") or []
+                                if addrs:
+                                    local_ip = str(addrs[0]).split("/")[0]
+                                    break
+            except Exception as e:
+                log.warning("Enroll: /network/info failed: %s", e)
+
+            #CC- 3) install_type — supervisor /info → "supervisor.host" + "supervisor"."channel"
+            install_type = None
+            try:
+                async with session.get(f"{SUPERVISOR_URL}/info", headers=headers_sup) as r:
+                    if r.status == 200:
+                        d = (await r.json()).get("data", {})
+                        #CC- Možnosti: "Home Assistant OS", "Home Assistant Supervised", "Home Assistant Container", "Home Assistant Core"
+                        op = d.get("operating_system") or ""
+                        sup = d.get("supervisor") or ""
+                        if "Home Assistant OS" in op or sup:
+                            install_type = "haos" if "Home Assistant OS" in op else "supervised"
+                        else:
+                            install_type = "container"
+            except Exception as e:
+                log.warning("Enroll: /info failed: %s", e)
+            if not install_type:
+                install_type = "haos"  #CC- safe default for addon context (always has supervisor)
+
+            if not ha_url:
+                #CC- Fallback: use Cloudflare hostname if external_url missing — still better than nothing.
+                #CC- MCP will reject if it can't be parsed, that's OK (re-enroll next restart).
+                log.warning("Enroll: ha_url not detected, MCP enroll will fail — set HA external_url and restart addon")
+                return
+
+            #CC- 4) Mint Long-Lived Access Token via Supervisor → Core proxy
+            ha_token = None
+            try:
+                #CC- HA REST API: POST /core/api/auth/long_lived_access_token
+                #CC- Lifespan in days, client_name for audit. Proxy uses SUPERVISOR_TOKEN as system user.
+                payload = json.dumps({
+                    "lifespan": 3650,
+                    "client_name": f"Guard Agent {VERSION} ({datetime.now().strftime('%Y-%m-%d')})"
+                }).encode()
+                async with session.post(
+                    f"{SUPERVISOR_URL}/core/api/auth/long_lived_access_token",
+                    headers=headers_sup, data=payload
+                ) as r:
+                    body = await r.text()
+                    if r.status == 200:
+                        #CC- HA returns either JSON with .token or raw token string — be defensive.
+                        try:
+                            j = json.loads(body)
+                            ha_token = j.get("token") if isinstance(j, dict) else (body if isinstance(j, str) else None)
+                            if not ha_token and isinstance(j, str):
+                                ha_token = j
+                        except Exception:
+                            ha_token = body.strip().strip('"')
+                    else:
+                        log.warning("Enroll: LLAT mint HTTP %s: %s", r.status, body[:300])
+            except Exception as e:
+                log.warning("Enroll: LLAT mint failed: %s", e)
+
+            if not ha_token:
+                log.warning("Enroll: ha_token unavailable, aborting (will retry next start)")
+                return
+
+            #CC- 5) POST to MCP /api/agent/{apiKey}/enroll
+            enroll_payload = {
+                "ha_url": ha_url,
+                "ha_token": ha_token,
+                "ha_version": ha_version,
+                "install_type": install_type,
+                "agent_version": VERSION,
+                "hostname": hostname,
+                "local_ip": local_ip,
+                "timezone": timezone,
+            }
+            try:
+                async with session.post(
+                    f"{SERVER_URL}/api/agent/{API_KEY}/enroll",
+                    headers=_guard_headers(),
+                    data=json.dumps(enroll_payload).encode()
+                ) as r:
+                    body = await r.text()
+                    if r.status == 200:
+                        log.info("Enroll: OK — server response: %s", body[:300])
+                        try:
+                            os.makedirs("/data", exist_ok=True)
+                            with open(ENROLL_SENTINEL, "w", encoding="utf-8") as f:
+                                json.dump({
+                                    "enrolled_at": datetime.now().isoformat(),
+                                    "ha_url": ha_url,
+                                    "install_type": install_type,
+                                    "agent_version": VERSION,
+                                }, f)
+                        except Exception as e:
+                            log.warning("Enroll: sentinel write failed: %s", e)
+                    else:
+                        log.warning("Enroll: MCP HTTP %s: %s", r.status, body[:300])
+            except Exception as e:
+                log.warning("Enroll: MCP POST failed: %s", e)
+    except Exception as e:
+        log.warning("Enroll: outer error %s — agent continues normally", e)
+
+
 async def main():
     app = create_app()
 
     #CC- Fetch explicit entity mapping from server before starting telemetry
     await asyncio.to_thread(_fetch_key_entities)
+
+    #CC- M3 (2026-05-01) — one-shot enrollment, hard-bounded, fail-soft
+    try:
+        await asyncio.wait_for(_enroll_once(), timeout=30)
+    except asyncio.TimeoutError:
+        log.warning("Enroll: hard timeout 30s — agent continues, will retry next restart")
+    except Exception as e:
+        log.warning("Enroll: unexpected error %s — agent continues", e)
 
     # Start background tasks
     asyncio.create_task(scanner_loop())
