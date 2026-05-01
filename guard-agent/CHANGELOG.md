@@ -4,6 +4,28 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.6.1] — 2026-05-01
+
+### Co je nového
+
+**Auto-add Cloudflared repository** — onboarding na čerstvou HA OS instalaci už nevyžaduje ruční přidání community repa. Stačí nainstalovat Guard Agent a vše ostatní si zařídí.
+
+### Přidáno
+
+- `install_cloudflared` handler před instalací Cloudflared addonu nejprve ověří, že je community repo `brenner-tobias/ha-addons` přidané v Add-on Store. Pokud ne, přidá ho přes `POST /store/repositories`, zavolá `store/reload` a počká 8 s na propagaci.
+- Payload `install_cloudflared` přijímá volitelné `repo_url` (default `https://github.com/brenner-tobias/ha-addons`) a `addon_slug` (default `a0d7b954_cloudflared`) — lze přepsat z MCP server commandu.
+
+### Opraveno
+
+- Eliminace `addon not found` chyby na čerstvé HA OS — předtím Cloudflared install padl pokud uživatel nepřidal repo manuálně.
+
+### Idempotence
+
+- Repo-add krok je no-op pokud je repo už přidané (kontrola přes `GET /store` a porovnání `source` URL).
+- Fail-soft: pokud repo-add selže (síť, Supervisor problém), agent loguje warning a pokračuje na install — uživatel uvidí přesnou chybu místo timeoutu.
+
+---
+
 ## [1.6.0] — 2026-05-01
 
 ### Co je nového
@@ -73,6 +95,7 @@ Guard server uloží HA token zašifrovaný (AES-GCM) a vyplní `Customers.HaBas
 
 ---
 
+[1.6.1]: https://github.com/jufusius/guard-ha-addons/releases/tag/guard-agent-v1.6.1
 [1.6.0]: https://github.com/jufusius/guard-ha-addons/releases/tag/guard-agent-v1.6.0
 [1.5.0]: https://github.com/jufusius/guard-ha-addons/releases/tag/guard-agent-v1.5.0
 [1.4.2]: https://github.com/jufusius/guard-ha-addons/releases/tag/guard-agent-v1.4.2

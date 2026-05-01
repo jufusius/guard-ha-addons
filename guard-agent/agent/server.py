@@ -43,7 +43,7 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 ENROLL_SENTINEL = "/data/enrolled.json"
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
@@ -997,9 +997,10 @@ async def _execute_command(command, payload):
 
     elif command == "install_cloudflared":
         #CC- Sprint E (2026-04-21): T2 auto-provisioning. McpHomeServer enqueue tento command po ProvisionAsync.
-        #CC- Payload: { tunnel_id, tunnel_name, hostname, tunnel_token }.
-        #CC- Postup: 1) zaloha tokenu do /share/guard/cloudflared-token.json (recovery),
-        #CC-          2) supervisor install Cloudflared addonu (community repo brenner-tobias/ha-addons),
+        #CC- Payload: { tunnel_id, tunnel_name, hostname, tunnel_token, [repo_url], [addon_slug] }.
+        #CC- Postup: 0) ensure community repo (brenner-tobias/ha-addons) je v Add-on Store,
+        #CC-          1) zaloha tokenu do /share/guard/cloudflared-token.json (recovery),
+        #CC-          2) supervisor install Cloudflared addonu,
         #CC-          3) addon options {external_hostname, tunnel_token, additional_hosts:[]},
         #CC-          4) start addonu.
         #CC- Idempotentni: pokud addon uz bezi se stejnym tokenem, jen restart.
@@ -1027,8 +1028,37 @@ async def _execute_command(command, payload):
         except Exception as e:
             log.warning("  install_cloudflared: backup failed: %s", e)
 
-        #CC- Slug pro Cloudflared addon — nejcastejsi community repo. TODO ověřit při prvním ostrém deploy.
+        #CC- Slug pro Cloudflared addon — community repo brenner-tobias/ha-addons.
         addon_slug = payload.get("addon_slug", "a0d7b954_cloudflared")
+        repo_url = payload.get("repo_url", "https://github.com/brenner-tobias/ha-addons")
+
+        #CC- Step 0 (1.6.1): ensure community repo přidaný a addon dostupný.
+        #CC- Bez tohoto kroku má čerstvá HA instalace addon_slug=404 → install fail.
+        #CC- Idempotentni: list repositories, pokud chybí → POST + reload + krátký wait.
+        repo_added = False
+        try:
+            store_resp = await _supervisor_cmd("GET", "store")
+            existing_repos = []
+            store_data = (store_resp.get("data") or {}) if isinstance(store_resp, dict) else {}
+            for r in store_data.get("repositories", []):
+                src = (r.get("source") or "").rstrip("/").lower()
+                if src:
+                    existing_repos.append(src)
+            need_add = repo_url.rstrip("/").lower() not in existing_repos
+            if need_add:
+                log.info("  install_cloudflared: community repo missing, adding %s", repo_url)
+                add_resp = await _supervisor_cmd("POST", "store/repositories", {"repository": repo_url})
+                log.info("  install_cloudflared: repo add response: %s", json.dumps(add_resp)[:200])
+                repo_added = True
+                #CC- Reload aby se addon objevil v store
+                reload_resp = await _supervisor_cmd("POST", "store/reload")
+                log.info("  install_cloudflared: store reload: %s", json.dumps(reload_resp)[:200])
+                #CC- Krátký wait — store reload je async v Supervisoru, addon list se aktualizuje s prodlevou
+                await asyncio.sleep(8)
+            else:
+                log.info("  install_cloudflared: community repo already present")
+        except Exception as e:
+            log.warning("  install_cloudflared: repo check/add failed: %s — pokračuji s install (může selhat)", e)
 
         #CC- Step 1: install (idempotentni — pokud uz instalovany, vrati 400 ktere ignorujeme)
         install_resp = await _supervisor_cmd("POST", f"store/addons/{addon_slug}/install")
