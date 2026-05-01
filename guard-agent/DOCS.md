@@ -1,70 +1,128 @@
-# Guard Agent
+# Guard Agent — dokumentace
 
-Remote management agent pro Guard IoT platformu. Umožňuje vzdálenou správu Home Assistant instalace přes Cloudflare tunnel.
+Vzdálený management agent pro Guard IoT platformu. Tento dokument popisuje konfiguraci, REST API a řešení problémů. Quick-start a "What's new" najdeš v [README.md](README.md) a [CHANGELOG.md](CHANGELOG.md).
 
-## Funkce
+## Architektura
 
-- **Síťový scanner** — ARP scan, Tuya UDP discovery, ping sweep, TCP port probe
-- **Správa souborů** — čtení/zápis configuration.yaml a dalších konfiguračních souborů
-- **Shell příkazy** — vzdálené spouštění příkazů
-- **Supervisor proxy** — instalace addonů, správa integrací
-- **Telemetrie** — automatické odesílání dat na Guard server
+```
+┌─────────────────────┐         HTTPS          ┌──────────────────────┐
+│ Guard MCP server    │ ◀───── enrollment ────▶│ Guard Agent (8300)   │
+│ mcp.jufusi.us       │ ◀───── telemetry ─────▶│ (HA addon)           │
+│                     │ ─────── commands ─────▶│  ├── HA Core API     │
+│                     │                        │  ├── Supervisor API  │
+└─────────────────────┘                        │  ├── File system     │
+                                               │  └── Network scanner │
+                                               └──────────────────────┘
+```
+
+Agent běží jako standalone HA addon, vystavuje REST API na portu 8300 a zároveň pravidelně pollu Guard server pro nové příkazy. Pro vzdálený přístup z internetu je doporučená kombinace s [Cloudflared addon](https://github.com/brenner-tobias/ha-addons/tree/main/cloudflared).
 
 ## Konfigurace
 
-- **API key** — váš Guard API klíč (z portálu portal.jufusi.us)
-- **Server URL** — URL Guard serveru
-- **Scan interval** — interval skenování sítě (minuty)
-
-## Cloudflare tunnel
-
-Pro vzdálený přístup přidejte v Cloudflare Zero Trust Dashboard route:
-- Subdomain: `guard`
-- Service: `http://localhost:8300`
+| Parametr        | Typ    | Default                  | Popis                                                          |
+|-----------------|--------|--------------------------|----------------------------------------------------------------|
+| `api_key`       | string | _(povinné)_              | Guard API klíč. Najdeš v profilu na portal.jufusi.us.          |
+| `server_url`    | url    | `https://mcp.jufusi.us`  | URL Guard MCP serveru. Měň jen pro vlastní instanci.           |
+| `scan_interval` | int    | `30`                     | Interval síťového skenu v minutách (5–1440).                   |
+| `tuya_scan`     | bool   | `true`                   | Detekce Tuya/Smart Life zařízení přes UDP broadcast.           |
 
 ## REST API
 
-Port 8300, autentizace přes `Authorization: Bearer {api_key}`.
+Autentizace: `Authorization: Bearer {api_key}` (stejný klíč jako v konfiguraci addonu).
 
-| Endpoint | Metoda | Popis |
-|----------|--------|-------|
-| `/api/health` | GET | Stav agenta |
-| `/api/scan/full` | GET | Kompletní síťový scan |
-| `/api/files/read?path=...` | GET | Čtení souboru |
-| `/api/files/write` | POST | Zápis souboru |
-| `/api/shell/exec` | POST | Spuštění příkazu |
-| `/api/supervisor/{path}` | GET/POST | Supervisor API proxy |
-| `/api/ha/{path}` | GET/POST | HA Core API proxy |
-| `/api/telemetry/push` | POST | Odeslat telemetrii |
+### Health & info
 
-## Changelog
+| Endpoint                | Metoda | Popis                                |
+|-------------------------|--------|--------------------------------------|
+| `/api/health`           | GET    | Stav agenta + verze                  |
+| `/api/info`             | GET    | HA verze, hostname, install-type, IP |
 
-### 1.6.0 (2026-05-01) — Bidirectional enrollment
+### Síťový scanner
 
-Při prvním startu (a 1× za 7 dní) se agent sám zaregistruje na MCP serveru:
+| Endpoint                | Metoda | Popis                                                |
+|-------------------------|--------|------------------------------------------------------|
+| `/api/scan/full`        | GET    | Kompletní scan (ARP + Tuya + ping + TCP probe)       |
+| `/api/scan/tuya`        | GET    | Pouze Tuya UDP discovery                             |
+| `/api/scan/arp`         | GET    | Pouze ARP cache                                      |
 
-1. Přečte `external_url` / `internal_url`, verzi HA a timezone přes `/core/api/config`
-2. Zjistí hostname (`/host/info`) a primární lokální IP (`/network/info`)
-3. Detekuje typ instalace (HAOS / Supervised / Container)
-4. Vygeneruje **Long-Lived Access Token** přes `POST /core/api/auth/long_lived_access_token` (platnost 3650 dní, klient `Guard Agent 1.6.0`)
-5. Pošle vše na `POST {server_url}/api/agent/{api_key}/enroll`
+### Souborový systém
 
-MCP si HA token uloží zašifrovaný (AES-GCM), vyplní `Customers.HaBaseUrl` / `HaToken` / `HaVersion` / `AgentInstallType` / `AgentVersion` / `AgentHostname` / `AgentLocalIp` / `AgentTimezone` a nastaví `AgentEnrolledAt`. Tím odpadá ruční kopírování HA tokenu z portálu.
+| Endpoint                  | Metoda | Body / query                       | Popis                              |
+|---------------------------|--------|------------------------------------|------------------------------------|
+| `/api/files/read`         | GET    | `?path=configuration.yaml`         | Čtení souboru z `/homeassistant/`  |
+| `/api/files/write`        | POST   | `{"path":"...","content":"..."}`   | Zápis souboru                      |
+| `/api/files/list`         | GET    | `?path=.storage`                   | Listing adresáře                   |
 
-**Idempotence:** sentinel `/data/enrolled.json` — opakovaný start v rámci 7 dní enrollment přeskočí; po 7 dnech se pošle znovu (refresh metadat).
+### Shell
 
-**Hang-prevention:** vnější `asyncio.wait_for` 30 s, per-request HTTP timeout 20 s, fail-soft (chyba se zaloguje, agent normálně pokračuje). Enrollment nikdy neblokuje start telemetrie ani polling smyček.
+| Endpoint               | Metoda | Body                                      | Popis                            |
+|------------------------|--------|-------------------------------------------|----------------------------------|
+| `/api/shell/exec`      | POST   | `{"command":"...","timeout":30}`          | Spuštění shell příkazu           |
 
-### 1.5.0 (2026-04-30)
-- Sprint E `install_cloudflared` command (T2 auto-provisioning)
-- Fix supervisor build (`build.yaml`)
+### Supervisor / HA Core proxy
 
-### 1.4.x
-- 1.4.2 — fix aarch64 build (apk `py3-pycryptodome`)
-- 1.4.1 — grid power odvozovat z fyzikální bilance, ne z kumulativních senzorů
+| Endpoint                       | Metoda      | Popis                                           |
+|--------------------------------|-------------|-------------------------------------------------|
+| `/api/supervisor/{path}`       | GET / POST  | Proxy na Supervisor API (`/addons`, `/host/info`, …) |
+| `/api/ha/{path}`               | GET / POST  | Proxy na HA Core API (`/states`, `/services/...`, …) |
 
-### 1.3.0
-- Telemetrie čte explicitní `KeyEntitiesJson` ze serveru
+### Telemetrie
 
-### 1.2.0
-- Strukturovaný telemetry push + automatický mapping entit
+| Endpoint                  | Metoda | Popis                                                  |
+|---------------------------|--------|--------------------------------------------------------|
+| `/api/telemetry/push`     | POST   | Vynucený push telemetrie na Guard server (debug)       |
+
+## Cloudflare tunnel
+
+Pro vzdálený přístup z mobilu nebo z venku LAN:
+
+1. Nainstaluj [Cloudflared addon](https://github.com/brenner-tobias/ha-addons/tree/main/cloudflared).
+2. V Cloudflare Zero Trust Dashboard přidej k tvému tunelu route:
+   - **Subdomain:** `guard`
+   - **Domain:** _(tvoje doména)_
+   - **Service:** `http://localhost:8300`
+3. Po pár minutách bude API dostupné na `https://guard.{tvoje-doména}/api/health`.
+
+## Bezpečnost
+
+Agent vyžaduje rozšířená oprávnění:
+
+- `hassio_role: manager` — instalace addonů, restart HA
+- `homeassistant_config:rw` — editace `configuration.yaml`, `.storage/*`
+- `NET_RAW` + `NET_ADMIN` — raw sockets pro ARP/ping scan
+
+Tato oprávnění jsou nezbytná pro vzdálenou správu. Veškerá komunikace s Guard serverem probíhá přes HTTPS. HA token vygenerovaný při enrollment je na serveru uložen šifrovaně (AES-GCM).
+
+## Řešení problémů
+
+**Addon se nespustí**
+Zkontroluj v záložce **Log**:
+- chybí `api_key` → vyplň v Configuration tabu
+- `Cannot reach mcp.jufusi.us` → ověř internet a DNS na HA boxu
+
+**Enrollment se nepodařil (1.6.0+)**
+- Log: `Enrollment failed: ...` — chyba se loguje, ale agent normálně pokračuje (fail-soft).
+- Re-trigger: smaž `/data/enrolled.json` v kontejneru a restartuj addon.
+- Po 7 dnech od posledního úspěchu se enrollment spustí automaticky znovu.
+
+**Telemetrie nepřichází na Guard server**
+- Ověř `api_key` (špatný klíč → 401, viditelné v logu).
+- V portálu zkontroluj, že je tvoje instalace přiřazena k tomu API klíči.
+
+**Síťový scan nic nenajde**
+- Tuya zařízení musí být v Smart Life apce a připojené k WiFi.
+- ARP scan: pokud běžíš v Dockeru bez `host_network`, scan vidí jen Docker bridge — Tuya UDP funguje stejně, ARP ne. Doporučujeme HAOS / Supervised pro plný scan.
+
+**Cloudflare tunnel routuje na port 8300, ale dostávám 502**
+- `host_network` musí být **false** (default), jinak addon naváže port jen na host loopback.
+- Cloudflared addon vidí `localhost:8300` jen pokud běží ve stejném Docker bridge.
+
+## Podpora
+
+- **Web:** https://guard.cz
+- **E-mail:** info@guard.cz
+- **Issues:** https://github.com/jufusius/guard-ha-addons/issues
+
+## Licence
+
+MIT — see [repository root](https://github.com/jufusius/guard-ha-addons).

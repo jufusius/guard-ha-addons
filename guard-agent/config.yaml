@@ -1,5 +1,5 @@
 name: "Guard Agent"
-description: "Guard IoT remote management agent — network scanning, file management, shell execution, integration control, telemetry, T2 cloudflared auto-install."
+description: "Vzdálená správa HA pro Guard IoT — auto-enrollment, telemetrie FVE/TČ, síťový scanner, file management."
 version: "1.6.0"
 slug: guard-agent
 url: "https://github.com/jufusius/guard-ha-addons"
