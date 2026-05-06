@@ -4,6 +4,22 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.7.0] — 2026-05-06
+
+### Bezpečnost (S2)
+
+**Přesun API klíče z URL do hlavičky pro agent command queue.**
+
+Telemetrie + device scanner už používaly v2 endpointy s `X-Agent-Key` headerem od dřívějška. Tento release dokončuje migraci pro zbývající callsity:
+
+- `GET /api/agent/{key}/commands` → `GET /api/v2/agent/commands` (X-Agent-Key)
+- `POST /api/agent/{key}/result` → `POST /api/v2/agent/result` (X-Agent-Key)
+- `POST /api/agent/{key}/enroll` → `POST /api/v2/agent/enroll` (X-Agent-Key)
+
+API klíč se už nikdy neobjeví v URL path → mizí z access logů Cloudflare tunelu i Kestrel HTTP logu na MCP serveru.
+
+Server (McpHomeServer) zachovává v1 routes pro backwards-compatibility do **2026-08-05** (Sunset header). Po tomto datu budou v1 routes odstraněny — všichni zákazníci by měli být na 1.7.0+.
+
 ## [1.6.1] — 2026-05-01
 
 ### Co je nového

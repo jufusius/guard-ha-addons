@@ -43,7 +43,7 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.6.1"
+VERSION = "1.7.0"
 ENROLL_SENTINEL = "/data/enrolled.json"
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
@@ -843,7 +843,7 @@ async def command_poll_loop():
 
             # Poll for pending commands
             req = urlreq.Request(
-                f"{SERVER_URL}/api/agent/{API_KEY}/commands",
+                f"{SERVER_URL}/api/v2/agent/commands",
                 headers=_guard_headers(),
             )
             resp = urlreq.urlopen(req, timeout=15)
@@ -890,7 +890,7 @@ async def command_poll_loop():
                 try:
                     result_data = json.dumps({"command_id": cmd_id, "result": result}).encode()
                     req2 = urlreq.Request(
-                        f"{SERVER_URL}/api/agent/{API_KEY}/result",
+                        f"{SERVER_URL}/api/v2/agent/result",
                         data=result_data,
                         headers=_guard_headers(),
                     )
@@ -1340,7 +1340,7 @@ async def _enroll_once():
             }
             try:
                 async with session.post(
-                    f"{SERVER_URL}/api/agent/{API_KEY}/enroll",
+                    f"{SERVER_URL}/api/v2/agent/enroll",
                     headers=_guard_headers(),
                     data=json.dumps(enroll_payload).encode()
                 ) as r:
