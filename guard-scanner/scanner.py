@@ -152,14 +152,19 @@ def tuya_udp_scan(timeout=5):
 
 # ── Guard server communication ─────────────────────────────
 def send_to_guard(devices):
-    url = f"{SERVER_URL}/api/devices/{API_KEY}"
+    #CC- S2 (2026-05-07): API key v X-Agent-Key headeru, ne v URL path (CF/Kestrel logy).
+    url = f"{SERVER_URL}/api/v2/devices"
     payload = json.dumps({"devices": devices}).encode("utf-8")
 
     for attempt in range(3):
         try:
             req = urllib.request.Request(
                 url, data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "GuardScanner/1.1"},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "GuardScanner/1.2",
+                    "X-Agent-Key": API_KEY,
+                },
                 method="POST",
             )
             resp = urllib.request.urlopen(req, timeout=15)
