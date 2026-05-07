@@ -43,8 +43,18 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 ENROLL_SENTINEL = "/data/enrolled.json"
+
+#CC- Per-command hard timeout (s). Max shell timeout je 120s, dáváme 60s buffer.
+COMMAND_HARD_TIMEOUT = 180
+#CC- Polling interval at steady state.
+POLL_INTERVAL = 60
+#CC- Exponential backoff bounds for reconnect on MCP outage.
+POLL_BACKOFF_MIN = 5
+POLL_BACKOFF_MAX = 60
+#CC- In-flight command IDs to prevent duplicate execution across server replays.
+_inflight_commands = set()
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
 def _guard_headers(extra=None):
@@ -830,80 +840,145 @@ async def telemetry_loop():
 
 
 # ── Command polling loop ──
+#CC- v1.7.1: full async reconnect/concurrent execution to fix "stuck chats".
+#CC- Previously command_poll_loop used blocking urllib.urlopen → blocked event loop,
+#CC- and ran commands serially → slow command starved next poll. After MCP outage
+#CC- there was no backoff, and replayed command IDs were re-executed.
+#CC- Fixes:
+#CC-   1. aiohttp for poll/report (async, doesn't block loop).
+#CC-   2. Each command runs as background task with COMMAND_HARD_TIMEOUT.
+#CC-   3. _inflight_commands set deduplicates server replays.
+#CC-   4. Exponential backoff on connection errors, reset on success.
+async def _report_command_result(cmd_id, result):
+    """Send command result back to MCP. Best-effort; logs and returns on failure."""
+    try:
+        payload = json.dumps({"command_id": cmd_id, "result": result}).encode()
+        timeout = __import__("aiohttp").ClientTimeout(total=15)
+        async with ClientSession(timeout=timeout) as session:
+            async with session.post(
+                f"{SERVER_URL}/api/v2/agent/result",
+                headers=_guard_headers(),
+                data=payload,
+            ) as r:
+                if r.status >= 400:
+                    body = await r.text()
+                    log.warning("Report #%s: HTTP %s: %s", cmd_id, r.status, body[:300])
+                else:
+                    log.info("  → reported #%s to server", cmd_id)
+    except Exception as e:
+        log.warning("Failed to report result for #%s: %s", cmd_id, e)
+
+
+def _log_command_result(cmd_id, result):
+    """Verbose logging of command result (truncated to 1000 chars)."""
+    result_str = json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result)
+    if len(result_str) > 1000:
+        result_str = result_str[:1000] + "...(truncated)"
+
+    if isinstance(result, dict) and result.get("error"):
+        log.error("  RESULT #%s: FAILED — %s", cmd_id, result["error"])
+    elif isinstance(result, dict) and result.get("exit_code") is not None:
+        ec = result["exit_code"]
+        if ec != 0:
+            log.warning("  RESULT #%s: exit_code=%s", cmd_id, ec)
+            log.warning("  STDERR: %s", str(result.get("stderr", ""))[:500])
+            log.warning("  STDOUT: %s", str(result.get("stdout", ""))[:500])
+        else:
+            log.info("  RESULT #%s: OK (exit_code=0)", cmd_id)
+            log.info("  STDOUT: %s", str(result.get("stdout", ""))[:500])
+    else:
+        log.info("  RESULT #%s: %s", cmd_id, result_str)
+
+
+async def _run_command_task(cmd_id, command, payload):
+    """Execute a single command with hard timeout, log, and report. Releases inflight slot when done."""
+    try:
+        log.info("═══ Command #%s: %s ═══", cmd_id, command)
+        log.info("  PAYLOAD: %s", json.dumps(payload, ensure_ascii=False)[:500] if payload else "(none)")
+
+        try:
+            result = await asyncio.wait_for(
+                _execute_command(command, payload),
+                timeout=COMMAND_HARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            result = {"error": f"command exceeded hard timeout {COMMAND_HARD_TIMEOUT}s"}
+            log.error("  TIMEOUT #%s after %ss", cmd_id, COMMAND_HARD_TIMEOUT)
+        except Exception as e:
+            result = {"error": str(e)}
+
+        _log_command_result(cmd_id, result)
+        await _report_command_result(cmd_id, result)
+    finally:
+        _inflight_commands.discard(cmd_id)
+
+
 async def command_poll_loop():
-    """Poll MCP server for commands, execute them locally."""
+    """Poll MCP server for commands, execute them concurrently. Reconnect with backoff on errors."""
     await asyncio.sleep(20)
+    backoff = POLL_BACKOFF_MIN
+    was_disconnected = False
+
     while True:
         if not API_KEY or not SERVER_URL:
-            await asyncio.sleep(60)
+            await asyncio.sleep(POLL_INTERVAL)
             continue
 
         try:
-            import urllib.request as urlreq
+            timeout = __import__("aiohttp").ClientTimeout(total=15)
+            async with ClientSession(timeout=timeout) as session:
+                async with session.get(
+                    f"{SERVER_URL}/api/v2/agent/commands",
+                    headers=_guard_headers(),
+                ) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        raise RuntimeError(f"HTTP {resp.status}: {body[:300]}")
+                    data = await resp.json()
 
-            # Poll for pending commands
-            req = urlreq.Request(
-                f"{SERVER_URL}/api/v2/agent/commands",
-                headers=_guard_headers(),
-            )
-            resp = urlreq.urlopen(req, timeout=15)
-            data = json.loads(resp.read())
-            commands = data.get("commands", [])
+            #CC- Successful poll — reset backoff, log reconnect if we were down
+            if was_disconnected:
+                log.info("MCP reconnected after outage")
+                was_disconnected = False
+            backoff = POLL_BACKOFF_MIN
 
+            commands = data.get("commands", []) or []
             for cmd in commands:
                 cmd_id = cmd.get("id")
+                if cmd_id is None:
+                    continue
+                #CC- Dedupe: server may replay un-acked commands; don't run twice
+                if cmd_id in _inflight_commands:
+                    log.debug("Command #%s already in-flight, skipping replay", cmd_id)
+                    continue
+
                 command = cmd.get("command", "")
                 payload = cmd.get("payload")
                 if payload and isinstance(payload, str):
                     try: payload = json.loads(payload)
                     except: pass
 
-                #CC- FULL verbose logging — příkaz, payload, výsledek
-                log.info("═══ Command #%s: %s ═══", cmd_id, command)
-                log.info("  PAYLOAD: %s", json.dumps(payload, ensure_ascii=False)[:500] if payload else "(none)")
+                _inflight_commands.add(cmd_id)
+                #CC- Run in background — poll loop continues immediately, slow command
+                #CC- doesn't block subsequent polls (avoids "stuck chat" symptom).
+                asyncio.create_task(_run_command_task(cmd_id, command, payload or {}))
 
-                try:
-                    result = await _execute_command(command, payload)
-                except Exception as e:
-                    result = {"error": str(e)}
+            await asyncio.sleep(POLL_INTERVAL)
 
-                #CC- Log CELÉHO výsledku (zkrácený na 1000 znaků)
-                result_str = json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result)
-                if len(result_str) > 1000:
-                    result_str = result_str[:1000] + "...(truncated)"
-
-                if isinstance(result, dict) and result.get("error"):
-                    log.error("  RESULT: FAILED — %s", result["error"])
-                elif isinstance(result, dict) and result.get("exit_code") is not None:
-                    ec = result["exit_code"]
-                    if ec != 0:
-                        log.warning("  RESULT: exit_code=%s", ec)
-                        log.warning("  STDERR: %s", str(result.get("stderr", ""))[:500])
-                        log.warning("  STDOUT: %s", str(result.get("stdout", ""))[:500])
-                    else:
-                        log.info("  RESULT: OK (exit_code=0)")
-                        log.info("  STDOUT: %s", str(result.get("stdout", ""))[:500])
-                else:
-                    log.info("  RESULT: %s", result_str)
-
-                # Report result back
-                try:
-                    result_data = json.dumps({"command_id": cmd_id, "result": result}).encode()
-                    req2 = urlreq.Request(
-                        f"{SERVER_URL}/api/v2/agent/result",
-                        data=result_data,
-                        headers=_guard_headers(),
-                    )
-                    urlreq.urlopen(req2, timeout=15)
-                    log.info("  → reported to server")
-                except Exception as e:
-                    log.warning("Failed to report result for #%s: %s", cmd_id, e)
-
+        except (asyncio.TimeoutError, OSError, RuntimeError) as e:
+            #CC- Connection / HTTP error — reconnect with exponential backoff
+            if not was_disconnected:
+                log.warning("MCP poll failed (%s) — entering reconnect loop", e)
+                was_disconnected = True
+            else:
+                log.debug("MCP still down (%s), backoff=%ss", e, backoff)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, POLL_BACKOFF_MAX)
         except Exception as e:
-            if "404" not in str(e) and "connection" not in str(e).lower():
-                log.warning("Command poll error: %s", e)
-
-        await asyncio.sleep(60)  # Poll every 60 seconds
+            #CC- Unexpected error — log and back off, but don't kill the loop
+            log.error("Command poll unexpected error: %s", e)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, POLL_BACKOFF_MAX)
 
 
 async def _execute_command(command, payload):

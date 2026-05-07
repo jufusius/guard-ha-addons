@@ -4,6 +4,26 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.7.1] — 2026-05-07
+
+### Opraveno
+
+**Stuck chats / zaseknuté commandy** — agent občas přestal reagovat na nové commandy z MCP, dokud se neresetoval addon. Příčiny a fixy:
+
+- `command_poll_loop` používal blokující `urllib.request.urlopen` → během HTTP volání stál celý event loop (telemetrie a další tasky čekaly).
+- Commandy se vykonávaly sériově. Pomalý handler (např. `install_cloudflared` s `await asyncio.sleep(8)` nebo `shell_exec` s timeout 120 s) blokoval polling — další commandy z fronty se nestihly začít.
+- Po výpadku spojení s MCP nebyla žádná reconnect logika — agent jen logoval warning a čekal 60 s, bez upozornění na delší výpadek.
+- Žádný hard timeout na úrovni commandu — supervisor call nebo síťová operace mohly viset prakticky neomezeně.
+- Server replay nezpracovaného commandu vedl k duplicitnímu spuštění.
+
+**Změny:**
+
+- Polling i reportování přepsáno na `aiohttp` (async, neblokuje event loop).
+- Každý command běží jako vlastní `asyncio.create_task` → polling pokračuje okamžitě.
+- Per-command hard timeout `COMMAND_HARD_TIMEOUT = 180 s` přes `asyncio.wait_for` — zaseknutý handler skončí s `error: command exceeded hard timeout`.
+- Exponenciální backoff `5 s → 60 s` při nedostupnosti MCP, log `MCP reconnected after outage` při obnovení.
+- `_inflight_commands` set deduplikuje server replays podle `command_id`.
+
 ## [1.7.0] — 2026-05-06
 
 ### Bezpečnost (S2)
