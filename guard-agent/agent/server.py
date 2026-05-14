@@ -903,7 +903,7 @@ async def command_poll_loop():
             if "404" not in str(e) and "connection" not in str(e).lower():
                 log.warning("Command poll error: %s", e)
 
-        await asyncio.sleep(60)  # Poll every 60 seconds
+        await asyncio.sleep(10)  #CC- v1.8.0: zrychleno z 60s na 10s — onboarding interactivity
 
 
 async def _execute_command(command, payload):

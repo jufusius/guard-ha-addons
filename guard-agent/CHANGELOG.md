@@ -4,6 +4,12 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.8.0] — 2026-05-14
+
+### Improved
+
+- **Command poll cadence zrychlen z 60s na 10s** — onboarding a interaktivní debugging už nečeká minutu na pickup. Provoz vyrostl ze 60 reqs/h na 360 reqs/h per addon (zanedbatelné).
+
 ## [1.7.0] — 2026-05-06
 
 ### Bezpečnost (S2)

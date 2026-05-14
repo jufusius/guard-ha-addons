@@ -1,6 +1,6 @@
 name: "Guard Agent"
 description: "Vzdálená správa HA pro Guard IoT — auto-enrollment, telemetrie FVE/TČ, síťový scanner, file management."
-version: "1.7.0"
+version: "1.8.0"
 slug: guard-agent
 url: "https://github.com/jufusius/guard-ha-addons"
 
