@@ -9,7 +9,7 @@ Endpoints:
   /api/scan/arp        — ARP table only
   /api/scan/tuya       — Tuya UDP broadcast
   /api/scan/ping       — ping specific targets
-  /api/files/list      — list files in /homeassistant/
+  /api/files/list      — list files in /homeassistant/ (also command: list_directory)
   /api/files/read      — read file content
   /api/files/write     — write file content
   /api/shell/exec      — execute shell command
@@ -43,7 +43,7 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.7.0"
+VERSION = "1.8.1"
 ENROLL_SENTINEL = "/data/enrolled.json"
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
@@ -921,6 +921,30 @@ async def _execute_command(command, payload):
             return {"error": "file not found"}
         return {"content": full.read_text(encoding="utf-8"), "size": full.stat().st_size}
 
+    elif command == "list_directory":
+        #CC- v1.8.1: nativní výpis adresáře (dřív jen přes shell_exec ls).
+        #CC-   Respektuje _safe_path sandbox (/homeassistant), formát shodný s handle_files_list.
+        path = payload.get("path", "/")
+        full = _safe_path(path)
+        if not full:
+            return {"error": "invalid path"}
+        if not full.exists():
+            return {"error": "not found"}
+        if full.is_file():
+            st = full.stat()
+            return {"type": "file", "size": st.st_size,
+                    "modified": datetime.fromtimestamp(st.st_mtime).isoformat()}
+        files = []
+        for item in sorted(full.iterdir()):
+            st = item.stat()
+            files.append({
+                "name": item.name,
+                "type": "dir" if item.is_dir() else "file",
+                "size": st.st_size if item.is_file() else None,
+                "modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            })
+        return {"path": path, "files": files, "count": len(files)}
+
     elif command == "write_file":
         path = payload.get("path", "")
         content = payload.get("content", "")
@@ -968,7 +992,8 @@ async def _execute_command(command, payload):
         data = payload.get("data", {})
         return await _ha_service_call(domain, service, data)
 
-    elif command == "restart_ha":
+    elif command in ("restart_ha", "restart"):
+        #CC- v1.8.1: "restart" alias k "restart_ha" — restart HA Core přes Supervisor.
         return await _supervisor_cmd("POST", "core/restart")
 
     elif command == "list_addons":
@@ -1384,6 +1409,14 @@ async def main():
     asyncio.create_task(scanner_loop())
     asyncio.create_task(command_poll_loop())
     asyncio.create_task(telemetry_loop())
+
+    #CC- Charge Servo (real-time regulátor, SHADOW only) — drží grid_power na cíli
+    #CC- z desired-state pomocí go-e amp + battery_max_charging_current. V shadow jen loguje.
+    try:
+        from regulators.charge_servo import charge_servo_loop
+        asyncio.create_task(charge_servo_loop())
+    except Exception as e:
+        log.warning("Charge servo not started: %s", e)
 
     runner = web.AppRunner(app)
     await runner.setup()

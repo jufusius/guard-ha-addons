@@ -4,6 +4,17 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.8.1] — 2026-06-29
+
+### Added
+
+- **Nativní command `list_directory`** — výpis adresáře v sandboxu `/homeassistant` (formát shodný s REST `handle_files_list`). Dřív bylo nutné obcházet přes `shell_exec ls`.
+- **Command alias `restart`** — synonymum k `restart_ha` (restart HA Core přes Supervisor). Obě jména teď fungují.
+
+### Fixed
+
+- **Sjednocení verze** — `server.py` VERSION byl rozjetý na `1.7.0`, zatímco `config.yaml` byl `1.8.0`. Obojí teď `1.8.1`.
+
 ## [1.8.0] — 2026-05-14
 
 ### Improved
