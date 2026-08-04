@@ -160,6 +160,81 @@ ne marketingové sdělení.
 
 ---
 
+## 3b. Srovnávací tabulka — 6 scénářů na jednom domě
+
+Základ: dům v Majetíně, 172 dnů měření. Scénáře bez FVE počítají se spotřebou
+**4 767,7 kWh** (celková spotřeba 5 458,6 minus 690,9 kWh spirál, které bez FVE
+neexistují). Scénáře s FVE používají stejné naměřené toky, takže tabulka izoluje
+efekt tarifu, ne efekt jiného chování domu.
+
+| # | Scénář | Komodita | Distr.+SS+daň | Stálý plat | Výkup | **Celkem** | Proti A |
+|---|---|---:|---:|---:|---:|---:|---:|
+| A | Fix, bez FVE | 15 209 | 10 994 | 1 425 | — | **27 628** | základ |
+| B | Spot bez optim., bez FVE | 13 721 | 10 994 | 1 425 | — | **26 140** | −1 488 (−5,4 %) |
+| C | Spot + Guard, bez FVE — CHYBÍ DATA | 10 977 | 10 994 | 1 425 | — | **23 396** | −4 232 (nedoloženo) |
+| D | Fix + FVE | 2 871 | 2 075 | 1 425 | −1 622 | **4 750** | −22 878 (−82,8 %) |
+| E | Spot bez optim. + FVE | 3 690 | 2 075 | 1 425 | −2 967 | **4 223** | −23 405 (−84,7 %) |
+| F | **Spot + Guard + FVE (skutečnost)** | 1 737 | 2 075 | 1 425 | −2 967 | **2 270** | −25 358 (−91,8 %) |
+
+### Rozklad úspory
+
+| Efekt | Porovnání | Za 172 dnů | Spolehlivost |
+|---|---|---:|---|
+| **Samotná FVE** | A → D (tarif zůstává fix) | **22 878 Kč** | MĚŘENO toky |
+| Přechod na spot, s FVE | D → F | 2 480 Kč | ODHAD výkupu u fixu |
+| Optimalizace uvnitř spotu | E → F | 1 953 Kč | CHYBÍ kontrolní skupina |
+| Přechod na spot, bez FVE | A → B | 1 488 Kč | ODHAD profilu spotřeby |
+
+**Podíl na celkové úspoře 25 358 Kč: FVE 90 %, tarif + optimalizace 10 %.**
+
+### Se započtením předplatného
+
+| Scénář | Účet | Předplatné | **Celkem** |
+|---|---:|---:|---:|
+| D — Fix + FVE, bez Guardu | 4 750 | 0 | **4 750 Kč** |
+| F — Spot + Guard Basic 499 | 2 270 | 2 844 | **5 114 Kč** |
+| F — Spot + Guard Standard 999 | 2 270 | 5 694 | **7 964 Kč** |
+| F — Spot + Guard Premium 1999 | 2 270 | 11 394 | **13 664 Kč** |
+
+**Čistě na účtu za elektřinu se předplatné nevrací ani v nejlevnějším tarifu.**
+Zákazník s FVE na fixu bez nás je levnější než zákazník se spotem a Guardem Basic.
+
+Co v tabulce NENÍ a hraje to ve prospěch Guardu: 690,9 kWh do akumulační nádrže
+(nahrazuje topení kotlem — neoceněno, nevím čím a za kolik dům topí jinak),
+koordinace TČ, vzdálená diagnostika, servis. **Argument pro Guard leží mimo tuhle
+tabulku.**
+
+### Citlivost na výkupní cenu u fixu
+
+| Výkup u fixu | Scénář D | Rozdíl D → F |
+|---|---:|---:|
+| 0,50 Kč/kWh | 5 561 Kč | 3 291 Kč |
+| **1,00 Kč/kWh (použito)** | 4 750 Kč | 2 480 Kč |
+| 1,50 Kč/kWh | 3 939 Kč | 1 669 Kč |
+| 2,00 Kč/kWh | 3 128 Kč | 858 Kč |
+
+### Vstupy tabulky
+
+| Vstup | Hodnota | Odkud |
+|---|---:|---|
+| Spotřeba domu | 5 458,6 kWh | MĚŘENO, 172 dnů |
+| Nákup s Guardem | 900,0 kWh @ 1,93 Kč | MĚŘENO cid 5 |
+| Prodej přebytků | 1 621,5 kWh @ 1,83 Kč | MĚŘENO cid 5 |
+| Nákup bez optimalizace | 4,10 Kč/kWh | MĚŘENO cid 6 — jiný dům, proxy |
+| Prostý průměr spotu | 2,62 Kč/kWh | MĚŘENO 91 dnů (6.5.–4.8.), medián 2,64 |
+| Profil domácnosti proti průměru | ×1,10 | ODHAD peak-skew, neověřeno |
+| Komodita fix 2026 | 3,19 Kč/kWh | ODHAD, E.ON Variant D02d |
+| Distribuce + SS + daň | 2,306 Kč/kWh | ODHAD, ERÚ 2026 ČEZ |
+| Stálý plat za jistič | 250 Kč/měs | CHYBÍ sazba pro 3×25 A |
+| Výkup u fixního dodavatele | 1,00 Kč/kWh | CHYBÍ smlouva |
+| Nákupní cena scénáře C | 2,30 Kč/kWh | CHYBÍ — čistý model, nula dat |
+
+**Sezónní varování:** průměr spotu 2,62 Kč/kWh je z 91 dnů 6. 5.–4. 8. 2026.
+Měsíčně: květen 2,49 · červen 2,60 · červenec 2,67 · srpen 3,12. Trend jde nahoru,
+zima chybí. **Tabulka platí pro léto, ne pro rok.**
+
+---
+
 ## 4. Co tato čísla NEDOKAZUJÍ
 
 1. **Rozdíl 1,93 vs. 4,10 není důkaz účinnosti optimalizátoru.** Roman a Mirek se liší

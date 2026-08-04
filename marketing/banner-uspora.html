@@ -313,10 +313,140 @@
     </div>
   </section>
 
+  <!-- ============ COMPARISON MATRIX ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 — Srovnávací tabulka</p>
+      <h2>Šest scénářů na jednom domě, všechny nákladové složky</h2>
+    </div>
+
+    <p>Základ je reálný dům v Majetíně za 172 dnů měření. Scénáře bez fotovoltaiky počítají se spotřebou <span class="num">4 767,7 kWh</span> — tedy celkovou spotřebou <span class="num">5 458,6 kWh</span> minus <span class="num">690,9 kWh</span>, které jdou do spirál akumulační nádrže a bez FVE by neexistovaly. Scénáře s fotovoltaikou používají stejné naměřené toky energie, takže tabulka izoluje efekt tarifu, ne efekt jiného chování domu.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>172 dnů · vše v Kč · záporná čísla u výkupu jsou příjem</caption>
+        <thead>
+          <tr>
+            <th>Scénář</th>
+            <th class="n">Komodita</th>
+            <th class="n">Distribuce<br>+ SS + daň</th>
+            <th class="n">Stálý plat</th>
+            <th class="n">Výkup<br>přebytků</th>
+            <th class="n">Celkem</th>
+            <th class="n">Proti A</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>A</b> · Fix, bez FVE<br><span class="stat-note">4 767,7 kWh × 3,19 Kč</span></td>
+            <td class="n">15 209</td><td class="n">10 994</td><td class="n">1 425</td><td class="n">—</td>
+            <td class="n"><b>27 628</b></td><td class="n">základ</td>
+          </tr>
+          <tr>
+            <td><b>B</b> · Spot bez optimalizace, bez FVE<br><span class="stat-note">4 767,7 kWh × 2,88 Kč</span></td>
+            <td class="n">13 721</td><td class="n">10 994</td><td class="n">1 425</td><td class="n">—</td>
+            <td class="n"><b>26 140</b></td><td class="n pos">−1 488<br><span class="stat-note">−5,4 %</span></td>
+          </tr>
+          <tr>
+            <td><b>C</b> · Spot + Guard, bez FVE <i class="chip c-gap">Chybí</i><br><span class="stat-note">modelováno, nemáme takového zákazníka</span></td>
+            <td class="n">10 977</td><td class="n">10 994</td><td class="n">1 425</td><td class="n">—</td>
+            <td class="n"><b>23 396</b></td><td class="n">−4 232<br><span class="stat-note">nedoloženo</span></td>
+          </tr>
+          <tr>
+            <td><b>D</b> · Fix + FVE<br><span class="stat-note">900 kWh × 3,19 Kč · výkup 1,00 Kč</span></td>
+            <td class="n">2 871</td><td class="n">2 075</td><td class="n">1 425</td><td class="n">−1 622</td>
+            <td class="n"><b>4 750</b></td><td class="n pos">−22 878<br><span class="stat-note">−82,8 %</span></td>
+          </tr>
+          <tr>
+            <td><b>E</b> · Spot bez optimalizace + FVE<br><span class="stat-note">900 kWh × 4,10 Kč — proxy z Trutnova</span></td>
+            <td class="n">3 690</td><td class="n">2 075</td><td class="n">1 425</td><td class="n">−2 967</td>
+            <td class="n"><b>4 223</b></td><td class="n pos">−23 405<br><span class="stat-note">−84,7 %</span></td>
+          </tr>
+          <tr class="total">
+            <td><b>F</b> · Spot + Guard + FVE <i class="chip c-meas">Měřeno</i><br><span class="stat-note">skutečný stav zákazníka</span></td>
+            <td class="n">1 737</td><td class="n">2 075</td><td class="n">1 425</td><td class="n">−2 967</td>
+            <td class="n pos">2 270</td><td class="n pos">−25 358<br><span class="stat-note">−91,8 %</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Rozklad — kolik z té úspory dělá co</caption>
+        <thead><tr><th>Efekt</th><th>Porovnání</th><th class="n">Za 172 dnů</th><th>Spolehlivost</th></tr></thead>
+        <tbody>
+          <tr><td><b>Samotná fotovoltaika</b></td><td>A → D, tarif zůstává fixní</td><td class="n pos">22 878 Kč</td><td><i class="chip c-meas">Měřeno</i> toky energie</td></tr>
+          <tr><td>Přechod na spot, s FVE</td><td>D → F</td><td class="n">2 480 Kč</td><td><i class="chip c-est">Odhad</i> výkupní ceny u fixu</td></tr>
+          <tr><td>Optimalizace uvnitř spotu, s FVE</td><td>E → F</td><td class="n">1 953 Kč</td><td><i class="chip c-gap">Chybí</i> kontrolní skupina</td></tr>
+          <tr><td>Přechod na spot, bez FVE</td><td>A → B</td><td class="n">1 488 Kč</td><td><i class="chip c-est">Odhad</i> profilu spotřeby</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Podíl na celkové úspoře <span class="num">25 358 Kč</span>: fotovoltaika <b class="num">90 %</b>, tarif a optimalizace dohromady <b class="num">10 %</b>. To je ta věta na banneru, jen v číslech.</p>
+
+    <div class="callout">
+      <h3>Nepříjemné: se Standardem je zákazník na spotu dráž než na fixu</h3>
+      <div class="scroll">
+        <table style="box-shadow:none">
+          <thead><tr><th>Scénář včetně předplatného</th><th class="n">Účet za elektřinu</th><th class="n">Předplatné</th><th class="n">Celkem</th></tr></thead>
+          <tbody>
+            <tr><td>D · Fix + FVE, bez Guardu</td><td class="n">4 750</td><td class="n">0</td><td class="n pos">4 750 Kč</td></tr>
+            <tr><td>F · Spot + Guard Basic 499</td><td class="n">2 270</td><td class="n">2 844</td><td class="n neg">5 114 Kč</td></tr>
+            <tr><td>F · Spot + Guard Standard 999</td><td class="n">2 270</td><td class="n">5 694</td><td class="n neg">7 964 Kč</td></tr>
+            <tr><td>F · Spot + Guard Premium 1999</td><td class="n">2 270</td><td class="n">11 394</td><td class="n neg">13 664 Kč</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Zákazník s fotovoltaikou na fixní sazbě a bez nás zaplatí za těch 172 dnů <b>4 750 Kč</b>. Ten samý zákazník se spotem a Guardem Basic <b>5 114 Kč</b>, se Standardem <b>7 964 Kč</b>. Čistě na účtu za elektřinu se předplatné nevrací ani v nejlevnějším tarifu. Tohle musí sedět dřív, než se postaví jakákoli kampaň postavená na úspoře.</p>
+    </div>
+
+    <div class="callout warn">
+      <h3>Co tabulka nezahrnuje a hraje to ve tvůj prospěch</h3>
+      <p>Těch <span class="num">690,9 kWh</span>, které Guard posílá do akumulační nádrže, nahrazuje topení kotlem. To v tabulce není nikde oceněno, protože nevím, čím a za kolik ten dům topí jinak. Stejně tak není oceněná koordinace tepelného čerpadla, vzdálená diagnostika ani servis. <b>Argument pro Guard leží mimo tuhle tabulku</b> — a dokud ho neumíme vyčíslit stejně tvrdě jako ta čísla výše, není z čeho stavět tvrzení o úspoře.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Citlivost — jak se rozdíl D→F hýbe podle výkupní ceny u fixu</caption>
+        <thead><tr><th>Výkup u fixního dodavatele</th><th class="n">Scénář D celkem</th><th class="n">Rozdíl proti F</th><th>Závěr</th></tr></thead>
+        <tbody>
+          <tr><td>0,50 Kč/kWh</td><td class="n">5 561 Kč</td><td class="n pos">3 291 Kč</td><td>spot vyhrává výrazně</td></tr>
+          <tr><td>1,00 Kč/kWh <i class="chip c-est">Odhad</i></td><td class="n">4 750 Kč</td><td class="n pos">2 480 Kč</td><td>použito v modelu</td></tr>
+          <tr><td>1,50 Kč/kWh</td><td class="n">3 939 Kč</td><td class="n">1 669 Kč</td><td>výhoda se tenčí</td></tr>
+          <tr><td>2,00 Kč/kWh</td><td class="n">3 128 Kč</td><td class="n neg">858 Kč</td><td>prakticky vyrovnané</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Vstupy tabulky — každý jednotlivě</caption>
+        <thead><tr><th>Vstup</th><th class="n">Hodnota</th><th>Odkud</th></tr></thead>
+        <tbody>
+          <tr><td>Spotřeba domu</td><td class="n">5 458,6 kWh</td><td><i class="chip c-meas">Měřeno</i> 172 dnů</td></tr>
+          <tr><td>Nákup ze sítě s Guardem</td><td class="n">900,0 kWh @ 1,93 Kč</td><td><i class="chip c-meas">Měřeno</i> cid 5</td></tr>
+          <tr><td>Prodej přebytků</td><td class="n">1 621,5 kWh @ 1,83 Kč</td><td><i class="chip c-meas">Měřeno</i> cid 5</td></tr>
+          <tr><td>Nákupní cena bez optimalizace</td><td class="n">4,10 Kč/kWh</td><td><i class="chip c-meas">Měřeno</i> cid 6 — jiný dům, proxy</td></tr>
+          <tr><td>Prostý průměr spotu</td><td class="n">2,62 Kč/kWh</td><td><i class="chip c-meas">Měřeno</i> 91 dnů, medián 2,64</td></tr>
+          <tr><td>Profil běžné domácnosti proti průměru</td><td class="n">×1,10</td><td><i class="chip c-est">Odhad</i> peak-skew, neověřeno</td></tr>
+          <tr><td>Komodita fix 2026</td><td class="n">3,19 Kč/kWh</td><td><i class="chip c-est">Odhad</i> E.ON Variant D02d</td></tr>
+          <tr><td>Distribuce + SS + daň</td><td class="n">2,306 Kč/kWh</td><td><i class="chip c-est">Odhad</i> ERÚ 2026, ČEZ</td></tr>
+          <tr><td>Stálý plat za jistič</td><td class="n">250 Kč/měs.</td><td><i class="chip c-gap">Chybí</i> sazba pro 3×25 A</td></tr>
+          <tr><td>Výkup u fixního dodavatele</td><td class="n">1,00 Kč/kWh</td><td><i class="chip c-gap">Chybí</i> smlouva — viz citlivost</td></tr>
+          <tr><td>Nákupní cena scénáře C</td><td class="n">2,30 Kč/kWh</td><td><i class="chip c-gap">Chybí</i> čistý model, nula dat</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><b>Sezónní varování platí pro celou tabulku.</b> Prostý průměr spotu 2,62 Kč/kWh pochází z 91 dnů mezi 6. květnem a 4. srpnem. Květen 2,49 · červen 2,60 · červenec 2,67 · srpen 3,12 — trend jde nahoru a zima v datech chybí úplně. Tabulka platí pro léto, ne pro rok.</p>
+  </section>
+
   <!-- ============ THE BLOCKER ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">02 — Nález, který mění výpočet</p>
+      <p class="eyebrow">03 — Nález, který mění výpočet</p>
       <h2>Ceny v naší databázi neobsahují distribuci</h2>
     </div>
 
@@ -331,7 +461,7 @@
   <!-- ============ MEASURED ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">03 — Naměřená data</p>
+      <p class="eyebrow">04 — Naměřená data</p>
       <h2>Dvě instalace, nic dopočítaného</h2>
     </div>
 
@@ -365,7 +495,7 @@
   <!-- ============ FULL COST ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">04 — Plný nákladový model</p>
+      <p class="eyebrow">05 — Plný nákladový model</p>
       <h2>Všechny složky, včetně těch, které se v reportech nezobrazují</h2>
     </div>
 
@@ -411,7 +541,7 @@
   <!-- ============ PRODUCT ECONOMICS ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">05 — Co to znamená pro cenu produktu</p>
+      <p class="eyebrow">06 — Co to znamená pro cenu produktu</p>
       <h2>Na arbitráži spot/fix se paušál nezaplatí</h2>
     </div>
 
@@ -420,7 +550,7 @@
         <caption>Romanova výhoda ze spotu proti ceně předplatného, stejné období</caption>
         <thead><tr><th>Položka</th><th class="n">172 dnů</th><th>Poznámka</th></tr></thead>
         <tbody>
-          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 04</td></tr>
+          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 05</td></tr>
           <tr><td>Guard Basic · 499 Kč/měs.</td><td class="n neg">2 844 Kč</td><td>nejlevnější plán</td></tr>
           <tr><td>Guard Standard · 999 Kč/měs.</td><td class="n neg">5 694 Kč</td><td>plán z finančního plánu</td></tr>
           <tr class="total"><td>Bilance na nejlevnějším plánu</td><td class="n neg">−364 Kč</td><td>zákazník je v minusu</td></tr>
@@ -447,7 +577,7 @@
   <!-- ============ REJECTED ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">06 — Zamítnuto</p>
+      <p class="eyebrow">07 — Zamítnuto</p>
       <h2>Tvrzení, která na banner nedám, a proč</h2>
     </div>
 
@@ -466,7 +596,7 @@
       </div>
       <div class="reject">
         <q>Naši zákazníci na elektřině vydělávají</q>
-        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 02.</span>
+        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 03.</span>
       </div>
       <div class="reject">
         <q>Návratnost FVE za X let</q>
@@ -478,7 +608,7 @@
   <!-- ============ GAPS ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">07 — Co potřebuju</p>
+      <p class="eyebrow">08 — Co potřebuju</p>
       <h2>Sedm věcí, po kterých banner unese tvrdší tvrzení</h2>
     </div>
 
