@@ -1,0 +1,496 @@
+<title>Úspora spot vs. fix — datový podklad a banner</title>
+
+<style>
+  :root {
+    --ground:   #EEF1F0;
+    --surface:  #FFFFFF;
+    --sunken:   #E3E8E6;
+    --ink:      #0E1614;
+    --ink-soft: #3B4A46;
+    --muted:    #65756F;
+    --rule:     #C9D2CF;
+    --accent:   #0B6E63;
+    --accent-w: #B4541A;
+    --accent-c: #98241A;
+    --shadow:   0 1px 2px rgba(14,22,20,.06), 0 8px 24px -12px rgba(14,22,20,.18);
+
+    --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:   #0C1211;
+      --surface:  #141C1A;
+      --sunken:   #101817;
+      --ink:      #E4EBE8;
+      --ink-soft: #B4C2BD;
+      --muted:    #8A9994;
+      --rule:     #2A3835;
+      --accent:   #3FBFAE;
+      --accent-w: #E08A4B;
+      --accent-c: #E0655A;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0C1211; --surface:#141C1A; --sunken:#101817;
+    --ink:#E4EBE8; --ink-soft:#B4C2BD; --muted:#8A9994; --rule:#2A3835;
+    --accent:#3FBFAE; --accent-w:#E08A4B; --accent-c:#E0655A;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+  :root[data-theme="light"] {
+    --ground:#EEF1F0; --surface:#FFFFFF; --sunken:#E3E8E6;
+    --ink:#0E1614; --ink-soft:#3B4A46; --muted:#65756F; --rule:#C9D2CF;
+    --accent:#0B6E63; --accent-w:#B4541A; --accent-c:#98241A;
+    --shadow:0 1px 2px rgba(14,22,20,.06), 0 8px 24px -12px rgba(14,22,20,.18);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem;
+  }
+
+  /* ---------- shared type ---------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1, h2, h3 { font-family: var(--serif); text-wrap: balance; font-weight: 600; }
+  h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); line-height: 1.1; letter-spacing: -.015em; }
+  h2 { font-size: 1.5rem; line-height: 1.2; letter-spacing: -.01em; }
+  h3 { font-size: 1.08rem; line-height: 1.3; }
+  p  { max-width: 62ch; }
+
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------- confidence chips ---------- */
+  .chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: .15em .5em;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+    vertical-align: .1em;
+  }
+  .c-meas { color: var(--accent); }
+  .c-est  { color: var(--accent-w); }
+  .c-gap  { color: var(--accent-c); }
+
+  /* ---------- page header ---------- */
+  .masthead { display: flex; flex-direction: column; gap: .75rem; }
+  .masthead .meta {
+    font-family: var(--mono); font-size: .74rem; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 1.25rem; padding-top: .5rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* ---------- the banner asset ---------- */
+  .asset-frame {
+    border: 1px dashed var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: .9rem;
+    background: var(--sunken);
+  }
+  .asset-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 1rem; flex-wrap: wrap;
+  }
+
+  .banner {
+    background: var(--surface);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    border-top: 3px solid var(--accent);
+  }
+  .banner-body { padding: 2.25rem clamp(1.25rem, 4vw, 2.75rem) 1.75rem; }
+  .banner-head { font-size: clamp(1.6rem, 4vw, 2.4rem); line-height: 1.08; letter-spacing: -.02em; }
+  .banner-head em { font-style: normal; color: var(--accent); }
+  .banner-sub { color: var(--ink-soft); margin-top: .85rem; font-size: 1rem; }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    border-top: 1px solid var(--rule);
+    margin-top: 1.75rem;
+  }
+  .stat {
+    padding: 1.25rem 0 .25rem;
+    display: flex; flex-direction: column; gap: .3rem;
+  }
+  .stat + .stat { border-left: 1px solid var(--rule); padding-left: 1.25rem; }
+  .stat-val {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: clamp(1.5rem, 3.6vw, 2rem); line-height: 1; letter-spacing: -.03em;
+  }
+  .stat-val small { font-size: .5em; letter-spacing: 0; color: var(--muted); margin-left: .15em; }
+  .stat-key { font-size: .82rem; color: var(--ink-soft); line-height: 1.35; }
+  .stat-note { font-family: var(--mono); font-size: .66rem; color: var(--muted); }
+
+  .banner-foot {
+    background: var(--sunken);
+    border-top: 1px solid var(--rule);
+    padding: .85rem clamp(1.25rem, 4vw, 2.75rem);
+    font-family: var(--mono);
+    font-size: .68rem;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+
+  /* ---------- generic section ---------- */
+  section { display: flex; flex-direction: column; gap: 1.25rem; }
+  .sec-head { display: flex; flex-direction: column; gap: .35rem; }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-size: .88rem;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    border-radius: 4px;
+  }
+  caption {
+    caption-side: top; text-align: left;
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); padding-bottom: .6rem;
+  }
+  th, td { padding: .6rem .85rem; text-align: left; border-bottom: 1px solid var(--rule); }
+  thead th {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); font-weight: 400;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.total td { font-weight: 600; background: var(--sunken); border-top: 2px solid var(--rule); }
+  tr.total td.n { font-size: 1rem; }
+  .pos { color: var(--accent); }
+  .neg { color: var(--accent-c); }
+
+  /* ---------- callout ---------- */
+  .callout {
+    background: var(--surface);
+    border-left: 3px solid var(--accent-c);
+    border-radius: 0 4px 4px 0;
+    padding: 1.1rem 1.25rem;
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: .5rem;
+  }
+  .callout.warn { border-left-color: var(--accent-w); }
+  .callout h3 { font-family: var(--sans); font-size: .95rem; font-weight: 650; }
+  .callout p { font-size: .9rem; color: var(--ink-soft); }
+
+  /* ---------- rejected claims ---------- */
+  .rejects { display: flex; flex-direction: column; gap: .6rem; }
+  .reject {
+    background: var(--surface); border-radius: 4px; box-shadow: var(--shadow);
+    padding: .9rem 1.1rem;
+    display: grid; grid-template-columns: minmax(0,1fr); gap: .35rem;
+  }
+  @media (min-width: 40rem) {
+    .reject { grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); gap: .35rem 1.5rem; align-items: baseline; }
+  }
+  .reject q {
+    font-family: var(--serif); font-size: 1rem; color: var(--muted);
+    text-decoration: line-through; text-decoration-color: var(--accent-c);
+    text-decoration-thickness: 1px;
+  }
+  .reject span { font-size: .86rem; color: var(--ink-soft); }
+
+  /* ---------- gap list ---------- */
+  ol.gaps { list-style: none; display: flex; flex-direction: column; gap: .55rem; counter-reset: g; }
+  ol.gaps li {
+    background: var(--surface); border-radius: 4px; box-shadow: var(--shadow);
+    padding: .8rem 1.1rem .8rem 3rem; position: relative;
+    font-size: .9rem; color: var(--ink-soft);
+    counter-increment: g;
+  }
+  ol.gaps li::before {
+    content: counter(g, decimal-leading-zero);
+    position: absolute; left: 1.1rem; top: .85rem;
+    font-family: var(--mono); font-size: .72rem; color: var(--accent);
+  }
+  ol.gaps b { color: var(--ink); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: .78rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+
+  a { color: var(--accent); }
+  a:focus-visible, :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Guard IoT · interní podklad, neurčeno ke zveřejnění jako celek</p>
+    <h1>Kolik reálně ušetří spot proti fixu — a co se z toho smí napsat na banner</h1>
+    <p style="color:var(--ink-soft)">Postaveno výhradně na naměřených datech dvou pilotních instalací a na veřejných regulovaných cenách pro rok 2026. Každé číslo níže nese značku spolehlivosti. Nic není dopočítáno „aby to vyšlo“.</p>
+    <div class="meta">
+      <span>Zpracováno 4. 8. 2026</span>
+      <span>Zdroj měření: Guard MCP / HourlyData</span>
+      <span>Vzorek: 2 instalace, 314 dnů provozu celkem</span>
+    </div>
+    <div class="legend">
+      <span><i class="chip c-meas">Měřeno</i> naše data, doslova z databáze</span>
+      <span><i class="chip c-est">Odhad</i> veřejný zdroj nebo modelový předpoklad</span>
+      <span><i class="chip c-gap">Chybí</i> nemám a nemůžu doložit</span>
+    </div>
+  </header>
+
+  <!-- ============ THE ASSET ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">01 — Hotový banner</p>
+      <h2>Tohle je obhajitelné. Všechna tři čísla umím doložit z databáze.</h2>
+    </div>
+
+    <div class="asset-frame">
+      <div class="asset-label">
+        <span class="eyebrow">Návrh sdělení · verze 1</span>
+        <span class="eyebrow">Poznámka pod čarou je součást banneru, ne dekorace</span>
+      </div>
+
+      <div class="banner">
+        <div class="banner-body">
+          <h2 class="banner-head">Tarif řeší tisíce.<br><em>Fotovoltaika řeší desetitisíce.</em></h2>
+          <p class="banner-sub">Naměřeno na reálných instalacích Guard, ne modelováno. Rozdíl mezi spotem a fixem je proti hodnotě vlastní výroby řádově menší položka — a my to ukazujeme, místo abychom to schovávali.</p>
+
+          <div class="stat-row">
+            <div class="stat">
+              <span class="stat-val">84<small>%</small></span>
+              <span class="stat-key">energetická soběstačnost domácnosti za 172 dnů provozu</span>
+              <span class="stat-note">9,86 kWp · 11,6 kWh baterie</span>
+            </div>
+            <div class="stat">
+              <span class="stat-val">28 037<small>Kč</small></span>
+              <span class="stat-key">hodnota, kterou za těch 172 dnů odvedla samotná FVE</span>
+              <span class="stat-note">vlastní spotřeba + prodej přebytků</span>
+            </div>
+            <div class="stat">
+              <span class="stat-val">2 480<small>Kč</small></span>
+              <span class="stat-key">z toho připadá na rozdíl mezi spotem a fixní sazbou</span>
+              <span class="stat-note">tj. 9 % celku</span>
+            </div>
+          </div>
+        </div>
+        <p class="banner-foot">
+          Měřeno 1. 1.–4. 8. 2026 na pilotní instalaci v Majetíně, 172 dnů se souvislými daty. Spotřeba 5 458,6 kWh, nákup ze sítě 900,0 kWh, prodej 1 621,5 kWh.
+          Hodnota FVE = vlastní spotřeba oceněná plnou cenou včetně distribuce (5,50 Kč/kWh) + tržba za prodej. Srovnání s fixem počítá s komoditní cenou 3,19 Kč/kWh a výkupem 1,00 Kč/kWh.
+          Jiná domácnost, jiná sazba, jiná zima = jiná čísla.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <h3>Než to pustíš ven, ověř jeden vstup</h3>
+      <p>Číslo <b>2 480 Kč</b> stojí z 54 % na předpokladu, že fixní dodavatel vykupuje přebytky za 1,00 Kč/kWh. Nemám ani jednu reálnou fixní smlouvu. Když je skutečná výkupní cena 1,50 Kč/kWh, spadne to na 1 669 Kč. Sežeň dva konkurenční ceníky a číslo se buď potvrdí, nebo se opraví — do inzerce až potom.</p>
+    </div>
+  </section>
+
+  <!-- ============ THE BLOCKER ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 — Nález, který mění výpočet</p>
+      <h2>Ceny v naší databázi neobsahují distribuci</h2>
+    </div>
+
+    <p>Sensor <code class="num">current_market_price_czk_kwh</code> hlásil 2. 8. 2026 v poledne <b class="num">0,02 Kč/kWh</b>. Samotná distribuce stojí kolem 2 Kč/kWh, takže jde o čistou komoditu — bez distribuce, systémových služeb, daně, nejspíš i bez DPH a marže dodavatele. Optimalizátor <code class="num">ec0_min_soc</code> počítá se stejným základem (křížově ověřeno na hodnotě 3,55 Kč/kWh pro 4. 8. 09:00).</p>
+
+    <div class="callout">
+      <h3>Řádek „Bilance: +1 231 Kč (zisk)“ z reportu není zisk</h3>
+      <p>Je to komoditní bilance, ne faktura. Po dopočtu distribuce se u Romana překlápí do minusu. Kdyby se toto číslo dostalo na web nebo do zákaznického reportu jako výdělek, je to nepravdivé tvrzení — a zákazník to pozná při prvním vyúčtování. Doporučuju to v portálu přejmenovat ještě dřív, než se řeší marketing.</p>
+    </div>
+  </section>
+
+  <!-- ============ MEASURED ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 — Naměřená data</p>
+      <h2>Dvě instalace, nic dopočítaného</h2>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Okno 1. 1. – 4. 8. 2026 · <i class="chip c-meas">Měřeno</i></caption>
+        <thead>
+          <tr>
+            <th>Zákazník</th><th class="n">Dnů dat</th><th class="n">Výroba</th><th class="n">Spotřeba</th>
+            <th class="n">Nákup</th><th class="n">⌀ nákup</th><th class="n">Prodej</th><th class="n">⌀ prodej</th><th class="n">Soběstačnost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Roman · Majetín<br><span class="stat-note">9,86 kWp · SolaX · optimalizace zapnutá</span></td>
+            <td class="n">172</td><td class="n">6 261,5 kWh</td><td class="n">5 458,6 kWh</td>
+            <td class="n">900,0 kWh</td><td class="n pos">1,93 Kč</td><td class="n">1 621,5 kWh</td><td class="n">1,83 Kč</td><td class="n">84 %</td>
+          </tr>
+          <tr>
+            <td>Mirek · Trutnov<br><span class="stat-note">10 kWp · RCT + Nibe · optimalizace vypnutá</span></td>
+            <td class="n">142</td><td class="n">3 408,4 kWh</td><td class="n">1 679,5 kWh</td>
+            <td class="n">411,5 kWh</td><td class="n neg">4,10 Kč</td><td class="n">2 027,7 kWh</td><td class="n">1,96 Kč</td><td class="n">75 %</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><b>Ten rozdíl 1,93 vs. 4,10 Kč/kWh vypadá jako důkaz účinnosti optimalizátoru. Není.</b> Roman spotřebuje 31,7 kWh/den, Mirek 11,8. Jiný kraj, jiný střídač, jiné tepelné čerpadlo, jiné sezónní pokrytí dat. Jsou to dva domy, ne A/B test. Dokud neproběhne měření na jednom domě se zapnutou a vypnutou optimalizací, je jakékoli „Guard vám sníží nákupní cenu o X %“ nedoložitelné.</p>
+  </section>
+
+  <!-- ============ FULL COST ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 — Plný nákladový model</p>
+      <h2>Všechny složky, včetně těch, které se v reportech nezobrazují</h2>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Roman · 172 dnů · spot s optimalizací proti fixní sazbě</caption>
+        <thead>
+          <tr><th>Položka</th><th class="n">Spot + Guard</th><th class="n">Fix</th><th>Spolehlivost</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Komodita — nákup 900,0 kWh</td><td class="n">1 734 Kč</td><td class="n">2 871 Kč</td><td><i class="chip c-meas">Měřeno</i> / <i class="chip c-est">Odhad</i></td></tr>
+          <tr><td>Distribuce D02d · 2,079 Kč/kWh</td><td class="n">1 871 Kč</td><td class="n">1 871 Kč</td><td><i class="chip c-est">Odhad</i></td></tr>
+          <tr><td>Systémové služby · 0,199 Kč/kWh</td><td class="n">179 Kč</td><td class="n">179 Kč</td><td><i class="chip c-est">Odhad</i></td></tr>
+          <tr><td>Daň z elektřiny · 0,028 Kč/kWh</td><td class="n">25 Kč</td><td class="n">25 Kč</td><td><i class="chip c-est">Odhad</i></td></tr>
+          <tr><td>POZE — od 2026 hradí stát</td><td class="n">0 Kč</td><td class="n">0 Kč</td><td><i class="chip c-est">Odhad</i></td></tr>
+          <tr><td>Stálý plat za jistič · 5,7 měs.</td><td class="n">1 425 Kč</td><td class="n">1 425 Kč</td><td><i class="chip c-gap">Chybí</i> sazba pro 3×25 A</td></tr>
+          <tr><td>Výnos z prodeje 1 621,5 kWh</td><td class="n pos">−2 965 Kč</td><td class="n">−1 622 Kč</td><td><i class="chip c-meas">Měřeno</i> / <i class="chip c-gap">Chybí</i></td></tr>
+          <tr class="total"><td>Celkem za 172 dnů</td><td class="n pos">2 269 Kč</td><td class="n">4 749 Kč</td><td>rozdíl <b class="num">2 480 Kč</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Mirek · 142 dnů · kde ta výhoda ve skutečnosti vzniká</caption>
+        <thead>
+          <tr><th>Složka rozdílu</th><th class="n">Objem</th><th class="n">Rozdíl ceny</th><th class="n">Dopad</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Nákup — spot proti fixu</td><td class="n">411,5 kWh</td><td class="n neg">−0,91 Kč/kWh</td><td class="n neg">−375 Kč</td></tr>
+          <tr><td>Prodej — spot proti výkupu u fixu</td><td class="n">2 027,7 kWh</td><td class="n pos">+0,96 Kč/kWh</td><td class="n pos">+1 947 Kč</td></tr>
+          <tr class="total"><td>Netto ve prospěch spotu</td><td class="n">—</td><td class="n">—</td><td class="n pos">1 572 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>Mirkovi spot na nákupu prodělává</h3>
+      <p>Jeho vážená nákupní cena 4,10 Kč/kWh je <b>vyšší</b> než fixní nabídka 3,19 Kč/kWh. Celá jeho výhoda leží ve výkupu přebytků. Má vypnutý <code class="num">adaptive_learner</code>. To není sdělení pro marketing — to je servisní úkol na tento týden a zároveň jediná cesta, jak získat skutečné před/po měření.</p>
+    </div>
+  </section>
+
+  <!-- ============ PRODUCT ECONOMICS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">05 — Co to znamená pro cenu produktu</p>
+      <h2>Na arbitráži spot/fix se paušál nezaplatí</h2>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Romanova výhoda ze spotu proti ceně předplatného, stejné období</caption>
+        <thead><tr><th>Položka</th><th class="n">172 dnů</th><th>Poznámka</th></tr></thead>
+        <tbody>
+          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 04</td></tr>
+          <tr><td>Guard Basic · 499 Kč/měs.</td><td class="n neg">2 844 Kč</td><td>nejlevnější plán</td></tr>
+          <tr><td>Guard Standard · 999 Kč/měs.</td><td class="n neg">5 694 Kč</td><td>plán z finančního plánu</td></tr>
+          <tr class="total"><td>Bilance na nejlevnějším plánu</td><td class="n neg">−364 Kč</td><td>zákazník je v minusu</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Není to chyba výpočtu. Zákazník s 84% soběstačností nakoupí ze sítě zhruba 1,9 MWh za rok. Na takovém objemu prostě není z čeho ušetřit desetitisíce. Kdo tvrdí opak, počítá buď domácnost bez fotovoltaiky, nebo si to vymýšlí.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>Kde peníze reálně jsou — hodnota samotné výroby</caption>
+        <thead><tr><th>Zákazník</th><th class="n">Vlastní spotřeba</th><th class="n">Ušetřeno na nákupu</th><th class="n">Tržba z prodeje</th><th class="n">Celkem</th></tr></thead>
+        <tbody>
+          <tr><td>Roman · 172 dnů</td><td class="n">4 558,6 kWh</td><td class="n">25 072 Kč</td><td class="n">2 965 Kč</td><td class="n pos">28 037 Kč</td></tr>
+          <tr><td>Mirek · 142 dnů</td><td class="n">1 268,0 kWh</td><td class="n">6 974 Kč</td><td class="n">3 978 Kč</td><td class="n pos">10 952 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><b>Řádový rozdíl.</b> Z toho plyne pozice, kterou umíme obhájit: neprodáváme arbitráž na spotu, ale to, že z už zaplacené fotovoltaiky dostaneme maximum — vyšší soběstačnost, řízení tepla a nádrží, koordinace tepelného čerpadla. Tam je prostor, který 84 % ještě nechává otevřený.</p>
+  </section>
+
+  <!-- ============ REJECTED ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">06 — Zamítnuto</p>
+      <h2>Tvrzení, která na banner nedám, a proč</h2>
+    </div>
+
+    <div class="rejects">
+      <div class="reject">
+        <q>Naši zákazníci nakupují elektřinu za 1,93 Kč/kWh</q>
+        <span>Pravdivé jako komoditní cena, ale čtenář si pod tím představí koncovou cenu. Ta je s distribucí kolem 4,24 Kč/kWh. Zavádějící formulace.</span>
+      </div>
+      <div class="reject">
+        <q>S Guardem ušetříte až 53 % na nákupu elektřiny</q>
+        <span>Vzniklo by porovnáním Romana s Mirkem. Dva různé domy nejsou měření efektu produktu. Bez kontrolní skupiny nedoložitelné.</span>
+      </div>
+      <div class="reject">
+        <q>Roční úspora až 5 300 Kč</q>
+        <span>Vzniklo by extrapolací 172 letních a jarních dnů na celý rok. Chybí říjen až únor — nejdražší a nejvíc nakupující měsíce. Extrapolace by byla nadhodnocená a nevím o kolik.</span>
+      </div>
+      <div class="reject">
+        <q>Naši zákazníci na elektřině vydělávají</q>
+        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 02.</span>
+      </div>
+      <div class="reject">
+        <q>Návratnost FVE za X let</q>
+        <span>Nemám v databázi pořizovací cenu ani jedné instalace. Bez CAPEXu se návratnost spočítat nedá, jen vymyslet.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ GAPS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">07 — Co potřebuju</p>
+      <h2>Sedm věcí, po kterých banner unese tvrdší tvrzení</h2>
+    </div>
+
+    <ol class="gaps">
+      <li><b>Reálná faktura od jednoho zákazníka.</b> Jediné, čím se ověří celý nákladový model naráz. Bez ní je distribuční část modelu odhad postavený na novinových článcích.</li>
+      <li><b>Distribuční sazba a velikost jističe podle odběrného místa.</b> Teď počítám 250 Kč/měs. paušálně; u domácnosti s tepelným čerpadlem to může být dvojnásobek. Mirkův EAN v databázi máme, Romanův ne.</li>
+      <li><b>Dva až tři konkurenční ceníky s výkupní cenou přebytků.</b> Nese přes polovinu celé vypočtené výhody spotu a je to dnes čirý odhad.</li>
+      <li><b>Data za říjen až únor.</b> Do té doby nelze publikovat žádné roční číslo. Přibližně čtyři měsíce čekání, nebo backfill z historie střídačů.</li>
+      <li><b>Zapnout optimalizaci u Mirka a měřit před/po.</b> Jediná realistická cesta k doložitelnému číslu „efekt Guardu“. Bez toho zůstane marketing u obecných formulací.</li>
+      <li><b>Měsíční report nákupní ceny proti fixní nabídce u každého zákazníka.</b> Odhalí případy jako Mirek, kde spot prodělává. Zároveň je to přesně ten retenční nástroj, který finanční plán zmiňuje jako mitigaci churnu po první zimě.</li>
+      <li><b>Pořizovací cena FVE v onboardingu.</b> Jedno pole ve formuláři. Bez něj nelze doložit návratnost, což je pro zákazníka nejsilnější argument vůbec.</li>
+    </ol>
+  </section>
+
+</div>
