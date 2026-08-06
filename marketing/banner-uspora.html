@@ -443,10 +443,90 @@
     <p><b>Sezónní varování platí pro celou tabulku.</b> Prostý průměr spotu 2,62 Kč/kWh pochází z 91 dnů mezi 6. květnem a 4. srpnem. Květen 2,49 · červen 2,60 · červenec 2,67 · srpen 3,12 — trend jde nahoru a zima v datech chybí úplně. Tabulka platí pro léto, ne pro rok.</p>
   </section>
 
+  <!-- ============ JAKUB ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 — Kontrola na reálném zákazníkovi</p>
+      <h2>Jakub, Loučky — jak by dopadl, kdyby přešel na spot</h2>
+    </div>
+
+    <p>Jakub je jediný zákazník, který je reálně na <b>fixní sazbě</b>. Systém mu přesto všechnu energii oceňuje spotem, takže jeho záznamy jsou přesně ten kontrafaktuál, který potřebujeme: <b>kolik by ho stál spot při jeho skutečném chování.</b> Nic se nemodeluje, jen se sečte, co se stalo.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>Naměřeno · 14. 3. – 6. 8. 2026 · 126 dnů dat ze 145 · zdroj HourlyData[CID=2]</caption>
+        <thead><tr><th>Veličina</th><th class="n">Hodnota</th><th>Poznámka</th></tr></thead>
+        <tbody>
+          <tr><td>FVE výroba</td><td class="n">3 786,2 kWh</td><td>10 kWp · GoodWe · LG RESU 9,8 kWh</td></tr>
+          <tr><td>Spotřeba domu</td><td class="n">3 380,0 kWh</td><td>tepelné čerpadlo Sinclair S-THERM</td></tr>
+          <tr><td>Nákup ze sítě</td><td class="n">1 969,0 kWh</td><td>13,6 kWh/den</td></tr>
+          <tr><td>Prodej do sítě</td><td class="n">2 034,3 kWh</td><td>skoro stejně jako nakoupil</td></tr>
+          <tr class="total"><td>Spotová cena vážená <b>jeho</b> profilem</td><td class="n neg">4,92 Kč/kWh</td><td><i class="chip c-meas">Měřeno</i> — proti fixu 3,19 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Fix (jeho realita) proti spotu (co by se stalo) · 145 dnů</caption>
+        <thead><tr><th>Položka</th><th class="n">Fix</th><th class="n">Spot</th><th class="n">Rozdíl</th></tr></thead>
+        <tbody>
+          <tr><td>Komodita — nákup 1 969 kWh</td><td class="n">6 281 Kč</td><td class="n">9 682 Kč</td><td class="n neg">+3 401 Kč</td></tr>
+          <tr><td>Distribuce + systémové služby + daň</td><td class="n">4 541 Kč</td><td class="n">4 541 Kč</td><td class="n">0</td></tr>
+          <tr><td>Stálý plat za jistič · 4,8 měs.</td><td class="n">1 191 Kč</td><td class="n">1 191 Kč</td><td class="n">0</td></tr>
+          <tr class="total"><td>Bez výkupu přebytků</td><td class="n pos">12 012 Kč</td><td class="n neg">15 413 Kč</td><td class="n neg">+3 401 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>Jakub by na spotu prodělal. Jeho profil je opak Romanova.</h3>
+      <p>Roman nakupuje za 1,93 Kč/kWh, Jakub by nakupoval za <b>4,92</b>. Rozdíl není v tarifu, ale v tom, kdy se odebírá: Jakubovo tepelné čerpadlo běží z 31 % v noci a jen z 26 % v poledním okně, kdy svítí. Sám audit konstatuje, že <b>neexistuje žádná automatizace, která by čerpadlo pouštěla na přebytek z FVE</b>. Na spot ho v tomhle stavu poslat nemůžeme — bylo by to o 3 401 Kč za pět měsíců horší.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Rozhoduje výkupní cena · export 2 034 kWh</caption>
+        <thead><tr><th class="n">Výkup na fixu</th><th class="n">Výkup na spotu</th><th class="n">Fix celkem</th><th class="n">Spot celkem</th><th class="n">Rozdíl</th><th>Vyhrává</th></tr></thead>
+        <tbody>
+          <tr><td class="n">0,00 Kč</td><td class="n">1,83 Kč</td><td class="n">12 012</td><td class="n">11 691</td><td class="n">−322</td><td>spot <i class="chip c-gap">Chybí</i> tohle je v DB</td></tr>
+          <tr><td class="n">0,50 Kč</td><td class="n">1,83 Kč</td><td class="n">10 995</td><td class="n">11 691</td><td class="n">+695</td><td><b>fix</b></td></tr>
+          <tr class="total"><td class="n">1,00 Kč</td><td class="n">1,83 Kč</td><td class="n">9 978</td><td class="n">11 691</td><td class="n neg">+1 712</td><td><b>fix</b></td></tr>
+          <tr><td class="n">1,50 Kč</td><td class="n">1,83 Kč</td><td class="n">8 961</td><td class="n">11 691</td><td class="n">+2 730</td><td><b>fix</b></td></tr>
+          <tr><td class="n">1,83 Kč</td><td class="n">1,83 Kč</td><td class="n">8 290</td><td class="n">11 691</td><td class="n">+3 401</td><td><b>fix</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><b>Zlomový bod je kolem 0,45 Kč/kWh.</b> Pokud Jakub na fixní smlouvě dostává za přetoky cokoli nad tuto částku, je fix pro něj levnější — a spot by pro něj byl chyba. V databázi má u výkupu nulu, což je buď chybějící konfigurace, nebo brutální realita jeho smlouvy. Dokud to nevíme, nelze mu nic doporučit.</p>
+
+    <div class="callout warn">
+      <h3>Dvě chyby v datech, které jsem cestou našel</h3>
+      <p><b>Duben je díra.</b> Zapsaný nákup 666,9 kWh a prodej 170,8 kWh, ale výroba i spotřeba jsou nula. Tím pádem vychází celková soběstačnost na 42 % — a přesně tohle číslo mu posílá vygenerovaný audit. V měsících s kompletními daty má <b>62 % (červen) a 67 % (červenec)</b>. Reálná soběstačnost je kolem 62 %, ne 42 %. Audit v téhle podobě posílat nelze.</p>
+      <p><b>Export si protiřečí.</b> Generátor auditu hlásí za totéž období 2 212 kWh, <code class="num">data_energy_stats</code> 2 034,3 kWh. Rozdíl 178 kWh ze dvou míst nad stejnou tabulkou. Jedno z nich počítá špatně.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Kde má Jakub reálné peníze — a není to tarif</caption>
+        <thead><tr><th>Přesunout z exportu do vlastní spotřeby</th><th class="n">Za 145 dnů</th><th class="n">Přepočet na rok</th></tr></thead>
+        <tbody>
+          <tr><td>500 kWh</td><td class="n">1 833 Kč</td><td class="n">4 614 Kč</td></tr>
+          <tr class="total"><td>1 000 kWh — polovina dnešního přetoku</td><td class="n pos">3 666 Kč</td><td class="n pos">9 228 Kč</td></tr>
+          <tr><td>1 500 kWh</td><td class="n">5 499 Kč</td><td class="n">13 842 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Jakub <b>exportuje 2 034 kWh a současně importuje 1 969 kWh</b> — skoro přesně stejné množství. Posílá energii pryč a za pár hodin ji kupuje zpátky dráž. Netto sazba za každou přesunutou kWh je 3,67 Kč (ušetřená plná cena 5,50 minus ušlý výkup 1,83). To je ten produkt: ne tarif, ale načasování čerpadla a baterie.</p>
+
+    <p class="stat-note">Sezónnost jeho spotové ceny, měřeno: duben 5,79 Kč/kWh při 9,5 °C · červen 4,10 Kč při 20,8 °C · červenec 4,33 Kč při 21,0 °C. Čím chladněji, tím hůř — a zima v datech chybí úplně, takže v zimě by byl rozdíl proti fixu ještě větší v neprospěch spotu.</p>
+  </section>
+
   <!-- ============ THE BLOCKER ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">03 — Nález, který mění výpočet</p>
+      <p class="eyebrow">04 — Nález, který mění výpočet</p>
       <h2>Ceny v naší databázi neobsahují distribuci</h2>
     </div>
 
@@ -461,7 +541,7 @@
   <!-- ============ MEASURED ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">04 — Naměřená data</p>
+      <p class="eyebrow">05 — Naměřená data</p>
       <h2>Dvě instalace, nic dopočítaného</h2>
     </div>
 
@@ -495,7 +575,7 @@
   <!-- ============ FULL COST ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">05 — Plný nákladový model</p>
+      <p class="eyebrow">06 — Plný nákladový model</p>
       <h2>Všechny složky, včetně těch, které se v reportech nezobrazují</h2>
     </div>
 
@@ -541,7 +621,7 @@
   <!-- ============ PRODUCT ECONOMICS ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">06 — Co to znamená pro cenu produktu</p>
+      <p class="eyebrow">07 — Co to znamená pro cenu produktu</p>
       <h2>Na arbitráži spot/fix se paušál nezaplatí</h2>
     </div>
 
@@ -550,7 +630,7 @@
         <caption>Romanova výhoda ze spotu proti ceně předplatného, stejné období</caption>
         <thead><tr><th>Položka</th><th class="n">172 dnů</th><th>Poznámka</th></tr></thead>
         <tbody>
-          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 05</td></tr>
+          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 06</td></tr>
           <tr><td>Guard Basic · 499 Kč/měs.</td><td class="n neg">2 844 Kč</td><td>nejlevnější plán</td></tr>
           <tr><td>Guard Standard · 999 Kč/měs.</td><td class="n neg">5 694 Kč</td><td>plán z finančního plánu</td></tr>
           <tr class="total"><td>Bilance na nejlevnějším plánu</td><td class="n neg">−364 Kč</td><td>zákazník je v minusu</td></tr>
@@ -577,7 +657,7 @@
   <!-- ============ REJECTED ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">07 — Zamítnuto</p>
+      <p class="eyebrow">08 — Zamítnuto</p>
       <h2>Tvrzení, která na banner nedám, a proč</h2>
     </div>
 
@@ -596,7 +676,7 @@
       </div>
       <div class="reject">
         <q>Naši zákazníci na elektřině vydělávají</q>
-        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 03.</span>
+        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 04.</span>
       </div>
       <div class="reject">
         <q>Návratnost FVE za X let</q>
@@ -608,7 +688,7 @@
   <!-- ============ GAPS ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">08 — Co potřebuju</p>
+      <p class="eyebrow">09 — Co potřebuju</p>
       <h2>Sedm věcí, po kterých banner unese tvrdší tvrzení</h2>
     </div>
 
