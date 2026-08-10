@@ -1,0 +1,259 @@
+<title>Jak měřit úsporu u spotového zákazníka — návrh metodiky</title>
+
+<style>
+  :root {
+    --ground:#EEF1F0; --surface:#FFFFFF; --sunken:#E3E8E6;
+    --ink:#0E1614; --ink-soft:#3B4A46; --muted:#65756F; --rule:#C9D2CF;
+    --accent:#0B6E63; --accent-w:#B4541A; --accent-c:#98241A;
+    --shadow:0 1px 2px rgba(14,22,20,.06), 0 8px 24px -12px rgba(14,22,20,.18);
+    --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0C1211; --surface:#141C1A; --sunken:#101817;
+      --ink:#E4EBE8; --ink-soft:#B4C2BD; --muted:#8A9994; --rule:#2A3835;
+      --accent:#3FBFAE; --accent-w:#E08A4B; --accent-c:#E0655A;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0C1211; --surface:#141C1A; --sunken:#101817;
+    --ink:#E4EBE8; --ink-soft:#B4C2BD; --muted:#8A9994; --rule:#2A3835;
+    --accent:#3FBFAE; --accent-w:#E08A4B; --accent-c:#E0655A;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+  :root[data-theme="light"] {
+    --ground:#EEF1F0; --surface:#FFFFFF; --sunken:#E3E8E6;
+    --ink:#0E1614; --ink-soft:#3B4A46; --muted:#65756F; --rule:#C9D2CF;
+    --accent:#0B6E63; --accent-w:#B4541A; --accent-c:#98241A;
+    --shadow:0 1px 2px rgba(14,22,20,.06), 0 8px 24px -12px rgba(14,22,20,.18);
+  }
+
+  body { background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:60rem; margin:0 auto; padding:3rem 1.5rem 6rem; display:flex; flex-direction:column; gap:3.25rem; }
+  .eyebrow { font-family:var(--mono); font-size:.7rem; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+  h1,h2,h3 { font-family:var(--serif); text-wrap:balance; font-weight:600; }
+  h1 { font-size:clamp(1.9rem,4.5vw,2.9rem); line-height:1.1; letter-spacing:-.015em; }
+  h2 { font-size:1.5rem; line-height:1.2; letter-spacing:-.01em; }
+  h3 { font-size:1.05rem; line-height:1.3; }
+  p { max-width:62ch; }
+  .num { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  code { font-family:var(--mono); font-size:.88em; background:var(--sunken); padding:.1em .35em; border-radius:2px; }
+
+  header { display:flex; flex-direction:column; gap:.75rem; }
+  header .meta { font-family:var(--mono); font-size:.74rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:1.25rem; padding-top:.5rem; border-top:1px solid var(--rule); }
+
+  section { display:flex; flex-direction:column; gap:1.15rem; }
+  .sec-head { display:flex; flex-direction:column; gap:.35rem; }
+
+  .scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; background:var(--surface); box-shadow:var(--shadow); border-radius:4px; }
+  caption { caption-side:top; text-align:left; font-family:var(--mono); font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding-bottom:.6rem; }
+  th,td { padding:.6rem .85rem; text-align:left; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th { font-family:var(--mono); font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:400; white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  td.n, th.n { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tr.total td { font-weight:600; background:var(--sunken); border-top:2px solid var(--rule); }
+  .pos { color:var(--accent); } .neg { color:var(--accent-c); }
+
+  .err { display:flex; flex-direction:column; gap:.9rem; }
+  .errcard { background:var(--surface); border-radius:4px; box-shadow:var(--shadow); padding:1.15rem 1.3rem; display:flex; flex-direction:column; gap:.5rem; border-top:2px solid var(--accent-c); }
+  .errcard.ok { border-top-color:var(--accent); }
+  .errcard .tag { font-family:var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+  .errcard p { font-size:.92rem; color:var(--ink-soft); }
+  .calc { font-family:var(--mono); font-size:.8rem; background:var(--sunken); padding:.7rem .85rem; border-radius:3px; line-height:1.7; overflow-x:auto; }
+
+  ol.layers { list-style:none; display:flex; flex-direction:column; gap:1rem; counter-reset:L; }
+  ol.layers > li { background:var(--surface); border-radius:4px; box-shadow:var(--shadow); padding:1.15rem 1.3rem 1.15rem 3.6rem; position:relative; counter-increment:L; display:flex; flex-direction:column; gap:.55rem; }
+  ol.layers > li::before { content:"L" counter(L); position:absolute; left:1.2rem; top:1.15rem; font-family:var(--mono); font-size:.8rem; font-weight:600; color:var(--accent); }
+  ol.layers h3 { font-family:var(--sans); font-size:1rem; font-weight:650; }
+  ol.layers p { font-size:.92rem; color:var(--ink-soft); }
+  ol.layers ul { padding-left:1.1rem; font-size:.9rem; color:var(--ink-soft); display:flex; flex-direction:column; gap:.2rem; }
+
+  .callout { background:var(--surface); border-left:3px solid var(--accent); border-radius:0 4px 4px 0; padding:1.1rem 1.25rem; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:.5rem; }
+  .callout.warn { border-left-color:var(--accent-w); }
+  .callout.bad { border-left-color:var(--accent-c); }
+  .callout h3 { font-family:var(--sans); font-size:.95rem; font-weight:650; }
+  .callout p { font-size:.9rem; color:var(--ink-soft); }
+
+  .mock { background:var(--surface); border-radius:4px; box-shadow:var(--shadow); overflow:hidden; border-top:3px solid var(--accent); }
+  .mock-h { padding:1.1rem 1.3rem .5rem; display:flex; justify-content:space-between; align-items:baseline; gap:1rem; flex-wrap:wrap; }
+  .mock-h b { font-family:var(--serif); font-size:1.15rem; }
+  .mock-row { display:flex; justify-content:space-between; gap:1rem; padding:.55rem 1.3rem; border-top:1px solid var(--rule); font-size:.9rem; }
+  .mock-row span:last-child { font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .mock-row.sum { background:var(--sunken); font-weight:600; }
+  .mock-foot { padding:.75rem 1.3rem; background:var(--sunken); border-top:1px solid var(--rule); font-family:var(--mono); font-size:.68rem; color:var(--muted); line-height:1.55; }
+
+  a { color:var(--accent); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Guard IoT · návrh metodiky · interní</p>
+    <h1>Jak spočítat úsporu spotovému zákazníkovi tak, aby to obstálo</h1>
+    <p style="color:var(--ink-soft)">Dnešní číslo „ušetřeno“ je vypočítané správně podle své vlastní definice — jen ta definice odpovídá na jinou otázku, než jakou si zákazník klade. Tenhle dokument popisuje, proč, a co s tím udělat, aby výsledek byl obhajitelný do koruny.</p>
+    <div class="meta">
+      <span>Zpracováno 4. 8. 2026</span>
+      <span>Podklad: měření cid 2, 5, 6</span>
+      <span>Navazuje na datový rozbor spot vs. fix</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">01 — Proč dnešní číslo nemůže být přesné</p>
+      <h2>Jedna zelená částka míchá tři různé věci</h2>
+    </div>
+
+    <p>Současný vzorec zní zhruba <code>Σ(vlastní spotřeba × spot) + Σ(export × spot)</code>. Tím se implicitně tvrdí: <i>„kdyby nebylo nás, zákazník by spotřeboval přesně tolik kWh, přesně v tytéž hodiny, jen by je koupil ze sítě.“</i> To neplatí ve třech různých směrech a každý z nich táhne výsledek jinam.</p>
+
+    <div class="err">
+      <div class="errcard">
+        <span class="tag">Chyba 1 · nadhodnocuje</span>
+        <h3>Indukovaná zátěž — problém puštěného kotle</h3>
+        <p>Guard v poledne sepne spirály na 2 kW, protože je kilowatthodina za 0,05 Kč. Naivní účtování: <i>spotřebováno za 0,05 místo 3,19, ušetřeno 6,28 Kč.</i> Jenže <b>bez Guardu by ta spotřeba vůbec nevznikla.</b> Není co ušetřit — je co vytvořit. Poctivé účtování musí být rozdíl mezi tím, co to nahradilo, a tím, co to stálo.</p>
+        <div class="calc">Roman, 690,9 kWh do akumulační nádrže za 172 dnů:<br>
+        nahradilo elektrokotel → <span style="color:var(--accent)">+2 623 až +3 072 Kč</span><br>
+        nahradilo plyn        → +345 až +795 Kč<br>
+        nahradilo dřevo       → <span style="color:var(--accent-c)">−345 až +104 Kč — tedy možná ztráta</span></div>
+        <p>Rozpětí přes 3 400 Kč na jediné neznámé, kterou nikde neevidujeme.</p>
+      </div>
+
+      <div class="errcard ok">
+        <span class="tag">Chyba 2 · tohle je pravda</span>
+        <h3>Posunutá zátěž — jediná skutečná úspora z časování</h3>
+        <p>Bojler by se sepnul v 19:00 za 5,49 Kč/kWh, Guard ho pustil ve 13:00 za 0,05. To je reálná úspora 5,44 Kč za každou kWh a je plně obhajitelná — <b>ale jen tehdy, když víme, kdy by se sepnul bez nás.</b> To dnes nikde nezaznamenáváme.</p>
+      </div>
+
+      <div class="errcard">
+        <span class="tag">Chyba 3 · nadhodnocuje</span>
+        <h3>Neovlivnitelná zátěž — lednice se ptát nebude</h3>
+        <p>Základní spotřeba domu běží, kdy běží. Připsat jí úsporu z časování je bezobsažné. U Romana je vlastní spotřeba <span class="num">4 558,6 kWh</span> za 172 dnů, ale posunout se dá jen zlomek. Zbytek do „ušetřeno“ patří jako <i>hodnota vlastní výroby</i>, ne jako <i>zásluha optimalizace</i>. Dnes se to nerozlišuje.</p>
+      </div>
+    </div>
+
+    <div class="callout bad">
+      <h3>Důsledek</h3>
+      <p>Číslo „ušetřeno“ dnes odpovídá na otázku <b>„jakou hodnotu má moje fotovoltaika“</b> — a na tu odpovídá dobře, jen o 61 % podhodnoceně, protože v ceně chybí distribuce. Neodpovídá na otázku <b>„co mi přinesl Guard“</b>. To jsou dvě čísla a musí být oddělená, jinak si je zákazník splete a my mu to nevyvrátíme.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 — Návrh</p>
+      <h2>Šest vrstev, každá odstraní jednu třídu nepřesnosti</h2>
+    </div>
+
+    <ol class="layers">
+      <li>
+        <h3>Rozdělit odběrné místo na kanály</h3>
+        <p>Každá kilowatthodina musí patřit do jedné přihrádky: základní zátěž · řízená zátěž (po zařízeních) · vlastní spotřeba z FVE · export · nabíjení baterie ze sítě. Bez toho nelze oddělit chybu 3 od zbytku.</p>
+        <p><b>Pravidlo, které bych zavedl natvrdo: co nemá vlastní měřák, o tom se netvrdí úspora.</b> Přihrádka bez měření se v reportu objeví jako „neměřeno“, ne jako nula a ne jako odhad.</p>
+        <p>Hardware pro to už u části zákazníků je — Libor má Shelly Pro 4PM s <code>energyEntity</code> na každém výstupu, Roman má <code>sensor.spiraly_celkova_energie</code>, Mirek měřenou zásuvku ve skleníku. Chybí to udělat standardem, ne výjimkou.</p>
+      </li>
+
+      <li>
+        <h3>Logovat protifaktuál v okamžiku rozhodnutí</h3>
+        <p>Tohle je z celého seznamu nejcennější a nestojí to žádný hardware. <b>Jen Guard ví, co se rozhodl udělat a co byla alternativa.</b> Dopočítat to zpětně z měřáků je hádání — v ten okamžik je ta informace zadarmo, o hodinu později je nenávratně pryč.</p>
+        <p>Každý zásah zapíše řádek: čas · zařízení · dodané kWh · cena v tu chvíli · <b>cena, za kterou by to běželo bez zásahu</b> · důvod (přebytek / levná hodina / force buy / komfort) · co to nahradilo.</p>
+        <p>Základ existuje — <code>SpiralyLog</code> se <code>rezim = "price_*"</code> už zapisuje. Stačí ho zobecnit na všechna řízená zařízení a dopsat sloupec s baseline cenou. Tím se „ušetřeno“ promění z modelu na <b>účetní knihu</b>, kterou lze řádek po řádku obhájit.</p>
+      </li>
+
+      <li>
+        <h3>Zaúčtovat indukovanou zátěž poctivě</h3>
+        <div class="calc">netto = (nahrazené palivo × jeho cena) − (cena elektřiny + ušlý výkup)</div>
+        <p>Vyžaduje jedno pole v onboardingu: <b>čím jinak topíte a za kolik Kč/kWh</b>. Dokud tam není, musí ta položka jít do reportu jako samostatný řádek s viditelným předpokladem — nikdy sečtená do jednoho čísla. A musí umět vyjít záporně, protože u dřeva vychází.</p>
+      </li>
+
+      <li>
+        <h3>Odečíst ztráty a opotřebení baterie</h3>
+        <p>Když se baterie nabíjí ze sítě kvůli arbitráži, dodaná kWh stojí víc než nakoupená. Účinnost se dá měřit přímo — Libor i Mirek mají <code>today_charge</code> a <code>today_discharge</code>, jejich podíl je reálná round-trip účinnost daného kusu, ne katalogový údaj.</p>
+        <div class="calc">skutečná cena dodané kWh = nákupní cena ÷ η  +  cena cyklu<br>
+        cena cyklu = pořizovací cena baterie ÷ životnostní průtok v kWh</div>
+        <p>Bez toho vypadá noční nabíjení jako úspora. Po započtení samotné účinnosti je u Romanova profilu <b class="neg">ztrátové o 0,36 Kč/kWh</b> — noční spot vyšel na 3,19 Kč/kWh, tedy prakticky stejně jako fix, a deset procent se ztratí v baterii. Opotřebení to ještě zhorší.</p>
+      </li>
+
+      <li>
+        <h3>Stínový režim — jediný skutečný důkaz</h3>
+        <p>Vrstvy 1–4 zpřesňují účetnictví. Ani jedna neprokáže <b>efekt</b>, protože k tomu je potřeba vědět, co by se stalo jinak. Na to jsou tři cesty a doporučuju první:</p>
+        <ul>
+          <li><b>Stínový režim</b> — plánovač běží pořád, ale u vypnutého zákazníka jen zapisuje, co by udělal. Obě varianty se ocení. Zákazníka to nijak neomezí, běží to nepřetržitě a po pár měsících dá rozdělení hodnot, ne jeden odhad.</li>
+          <li><b>Střídání týdnů</b> — optimalizace týden zapnutá, týden vypnutá, alespoň osm týdnů. Počasí i ceny se vystřídají. Nejsilnější důkaz, ale zákazník o polovinu úspory přijde, takže jen na dobrovolníka.</li>
+          <li><b>Před a po</b> — nejslabší, sezóna to rozmaže. Použitelné jen tam, kde „před“ už máme naměřené. <b>Přesně to je situace Jakuba</b> — jede na fixu bez optimalizace a data z pěti měsíců už existují.</li>
+        </ul>
+      </li>
+
+      <li>
+        <h3>Uzavřít cenový model a odsouhlasit ho s fakturou</h3>
+        <p>Do karty zákazníka patří: distribuční sazba, velikost jističe, dodavatel, výkupní cena přebytků, sazba DPH. Dnes jsou všechny čtyři mým odhadem z ceníků na webu — a výkupní cena sama nese přes polovinu celého srovnání spot vs. fix.</p>
+        <p>Vlastní spotřeba se musí oceňovat <b>plnou koncovou cenou včetně distribuce</b>, ne komoditou. U Romana je to rozdíl <span class="num pos">+10 655 Kč</span> za sedm měsíců, tedy 61 %.</p>
+        <p>A jednou ročně <b>odsouhlasit součet proti skutečné faktuře</b>. Když se rozejdou, model je špatně. To je jediný krok, který celý řetězec ověří zvenčí — bez něj zůstane všechno ostatní vnitřně konzistentní domněnkou.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 — Pořadí</p>
+      <h2>Co udělat první, když nechceš dělat všechno</h2>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Krok</th><th>Co to koupí</th><th class="n">Náročnost</th><th class="n">Hardware</th></tr></thead>
+        <tbody>
+          <tr class="total"><td>Ocenit vlastní spotřebu plnou cenou</td><td>Okamžitě +61 % správnosti dnešního čísla</td><td class="n">jedna konstanta</td><td class="n">0 Kč</td></tr>
+          <tr class="total"><td>Deník rozhodnutí (rozšířit SpiralyLog)</td><td>Mění model na účetní knihu; bez něj nelze nic z dalšího doložit</td><td class="n">dny</td><td class="n">0 Kč</td></tr>
+          <tr><td>Pole v onboardingu: tarif, jistič, výkup, náhradní palivo</td><td>Odstraní čtyři největší odhady najednou</td><td class="n">hodiny</td><td class="n">0 Kč</td></tr>
+          <tr><td>Stínový režim</td><td>První doložitelný efekt Guardu</td><td class="n">týdny</td><td class="n">0 Kč</td></tr>
+          <tr><td>Měření round-trip účinnosti z existujících senzorů</td><td>Zabrání účtovat neexistující arbitráž</td><td class="n">hodiny</td><td class="n">0 Kč</td></tr>
+          <tr><td>Podměření řízených zátěží</td><td>Oddělí posunutou zátěž od základní</td><td class="n">instalace</td><td class="n">~2–3 tis./zákazník</td></tr>
+          <tr><td>Roční odsouhlasení s fakturou</td><td>Ověří celý řetězec zvenčí</td><td class="n">proces</td><td class="n">0 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>První dva řádky jsou zdaleka nejlevnější věc, kterou teď můžeš udělat</h3>
+      <p>Nestojí ani korunu hardwaru, jsou to změny v serveru, a bez druhého z nich se žádné tvrzení o úspoře nedá obhájit. Všechno ostatní se dá dodělat postupně.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 — Výstup</p>
+      <h2>Jak by ten report měl vypadat</h2>
+    </div>
+
+    <p>Místo jedné zelené částky čtyři řádky, které se sčítají a každý zvlášť obstojí. Čísla níže jsou Romanova skutečná za červenec, přepočtená podle téhle metodiky.</p>
+
+    <div class="mock">
+      <div class="mock-h"><b>Červenec 2026</b><span class="num" style="color:var(--muted)">31 dní dat</span></div>
+      <div class="mock-row"><span>Hodnota vlastní výroby — <span style="color:var(--muted)">999,9 kWh nekoupených ze sítě</span></span><span>5 495 Kč</span></div>
+      <div class="mock-row"><span>Tržba za přebytky — <span style="color:var(--muted)">377,1 kWh</span></span><span>639 Kč</span></div>
+      <div class="mock-row"><span>Úspora z časování — <span style="color:var(--muted)">posunuté spotřebiče a nákup</span></span><span style="color:var(--accent-c)">neměřeno</span></div>
+      <div class="mock-row"><span>Teplo do nádrže — <span style="color:var(--muted)">76,9 kWh, nahrazuje ?</span></span><span style="color:var(--accent-c)">chybí palivo</span></div>
+      <div class="mock-row sum"><span>Celkem přineslo</span><span>6 134 Kč +</span></div>
+      <div class="mock-row"><span>Zaplaceno za elektřinu — <span style="color:var(--muted)">včetně distribuce a jističe</span></span><span>905 Kč</span></div>
+      <p class="mock-foot">Hodnota vlastní výroby oceněna plnou koncovou cenou 5,496 Kč/kWh včetně distribuce, systémových služeb a daně. Tržba za přebytky je skutečná spotová. Dva řádky zatím neumíme spočítat a je to v reportu vidět — až budou, číslo poroste, ne klesne.</p>
+    </div>
+
+    <div class="callout warn">
+      <h3>Ty dva červené řádky tam nechte</h3>
+      <p>Zákazník, který vidí „neměřeno“, ví, že se s ním jedná narovinu. Zákazník, kterému se chybějící položka schová do jednoho velkého čísla, to zjistí u vyúčtování a odejde. Finanční plán uvádí odchod po první zimě jako riziko číslo jedna — tohle je proti němu ta nejlevnější pojistka.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">05 — Drobnost, kterou je lepší vyřešit dřív než později</p>
+      <h2>Rozlišení</h2>
+    </div>
+    <p>Dnes se počítá po hodinách, <code>HourlyData</code> je hodinová. Evropský trh se ale posouvá k patnáctiminutovému obchodnímu intervalu a pokud se to na český day-ahead promítne, začne hodinové ocenění systematicky lhát — nejvíc přesně v těch hodinách, kdy cena rychle skáče, tedy tam, kde optimalizace pracuje. <b>Kdy přesně to v ČR platí, nevím a je to potřeba ověřit</b>, ale surová data pro to už máte: <code>SensorData</code> vzorkuje po pěti minutách, tedy 288 vzorků denně. Přechod je otázka agregace, ne nového měření.</p>
+  </section>
+
+</div>
