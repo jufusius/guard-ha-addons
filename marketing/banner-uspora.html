@@ -523,10 +523,112 @@
     <p class="stat-note">Sezónnost jeho spotové ceny, měřeno: duben 5,79 Kč/kWh při 9,5 °C · červen 4,10 Kč při 20,8 °C · červenec 4,33 Kč při 21,0 °C. Čím chladněji, tím hůř — a zima v datech chybí úplně, takže v zimě by byl rozdíl proti fixu ještě větší v neprospěch spotu.</p>
   </section>
 
+  <!-- ============ OVERENI STAGINGU + EFEKT ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 — Ověření aplikace a skutečný efekt systému</p>
+      <h2>Staging počítá pravdu. Otázka je, co z toho udělal Guard.</h2>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Staging proti databázi · Roman · měsíc po měsíci</caption>
+        <thead><tr><th>Měsíc</th><th class="n">Výroba v aplikaci</th><th class="n">Výroba v DB</th><th class="n">Rozdíl</th><th class="n">⌀ nákup</th><th class="n">⌀ prodej</th></tr></thead>
+        <tbody>
+          <tr><td>Únor</td><td class="n">321</td><td class="n">321,1</td><td class="n">−0,1</td><td class="n">2,90</td><td class="n">1,70</td></tr>
+          <tr><td>Březen</td><td class="n">1 106</td><td class="n">1 106,2</td><td class="n">−0,2</td><td class="n">3,72</td><td class="n">1,58</td></tr>
+          <tr><td>Duben</td><td class="n">578</td><td class="n">577,9</td><td class="n">+0,1</td><td class="n pos">−0,31</td><td class="n">1,63</td></tr>
+          <tr><td>Květen</td><td class="n">1 218</td><td class="n">1 218,2</td><td class="n">−0,2</td><td class="n pos">−0,82</td><td class="n">1,64</td></tr>
+          <tr><td>Červen</td><td class="n">1 518</td><td class="n">1 517,8</td><td class="n">+0,2</td><td class="n">3,09</td><td class="n">2,19</td></tr>
+          <tr class="total"><td>Červenec</td><td class="n">1 397</td><td class="n">1 396,5</td><td class="n">+0,5</td><td class="n neg">4,86</td><td class="n">1,69</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout" style="border-left-color:var(--accent)">
+      <h3>Ověření prošlo na korunu</h3>
+      <p>U července aplikace ukazuje <b>nákup 446 Kč</b> a <b>prodej 639 Kč</b>. Databáze vrací <b>446 Kč</b> a <b>639 Kč</b>. Výroba i spotřeba sedí na desetiny ve všech porovnatelných měsících. <b>Staging nefabuluje a nezaokrouhluje si to k lepšímu.</b> Metoda — ocenění vlastní spotřeby i exportu hodinovou spotovou cenou — je potvrzená na šesti nezávislých měsících. Srpen v aplikaci hlásí 139 kWh proti 277 kWh v DB, ale to není chyba: screenshot je ze 4. 8. dopoledne, moje dotazy jdou do 6. 8.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Jediná vada — chybějící distribuce na vlastní spotřebě</caption>
+        <thead><tr><th>Měsíc</th><th class="n">Vlastní spotřeba</th><th class="n">Aplikace</th><th class="n">Chybí</th><th class="n">Správně</th><th class="n">Podhodnoceno</th></tr></thead>
+        <tbody>
+          <tr><td>Únor</td><td class="n">294,0 kWh</td><td class="n">1 066</td><td class="n">+678</td><td class="n">1 744</td><td class="n">+64 %</td></tr>
+          <tr><td>Březen</td><td class="n">859,6</td><td class="n">2 654</td><td class="n">+1 982</td><td class="n">4 636</td><td class="n">+75 %</td></tr>
+          <tr><td>Duben</td><td class="n">363,2</td><td class="n">1 148</td><td class="n">+838</td><td class="n">1 986</td><td class="n">+73 %</td></tr>
+          <tr><td>Květen</td><td class="n">974,9</td><td class="n">3 498</td><td class="n">+2 248</td><td class="n">5 746</td><td class="n">+64 %</td></tr>
+          <tr><td>Červen</td><td class="n">993,8</td><td class="n">4 479</td><td class="n">+2 292</td><td class="n">6 771</td><td class="n">+51 %</td></tr>
+          <tr><td>Červenec</td><td class="n">999,9</td><td class="n">4 247</td><td class="n">+2 306</td><td class="n">6 553</td><td class="n">+54 %</td></tr>
+          <tr class="total"><td>Celkem</td><td class="n">4 620,7 kWh</td><td class="n">17 507</td><td class="n pos">+10 655</td><td class="n pos">28 162 Kč</td><td class="n">+61 %</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout" style="border-left-color:var(--accent)">
+      <h3>Důkaz, že optimalizace opravdu něco dělá</h3>
+      <p>V dubnu byla Romanova vážená nákupní cena <b>−0,31 Kč/kWh</b>, v květnu <b>−0,82 Kč/kWh</b>. Za odběr ze sítě dostával zaplaceno. Žádná neřízená domácnost zápornou průměrnou nákupní cenu nemá — to je přímý otisk logiky <code class="num">FORCE_BUY</code>. Tohle je poprvé, co mám v ruce tvrdý důkaz mechanismu, ne jen srovnání dvou různých domů.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Kolik ta optimalizace vynesla — proti prostému průměru trhu</caption>
+        <thead><tr><th>Měsíc</th><th class="n">⌀ nákup Romana</th><th class="n">Trh 24h</th><th class="n">Rozdíl</th><th class="n">Import</th><th class="n">Efekt</th></tr></thead>
+        <tbody>
+          <tr><td>Květen</td><td class="n pos">−0,82</td><td class="n">2,49</td><td class="n pos">+3,31</td><td class="n">125,6 kWh</td><td class="n pos">+416 Kč</td></tr>
+          <tr><td>Červen</td><td class="n">3,09</td><td class="n">2,60</td><td class="n neg">−0,49</td><td class="n">109,3</td><td class="n neg">−54 Kč</td></tr>
+          <tr><td>Červenec</td><td class="n neg">4,86</td><td class="n">2,67</td><td class="n neg">−2,19</td><td class="n">91,8</td><td class="n neg">−201 Kč</td></tr>
+          <tr><td>Srpen 1.–6.</td><td class="n neg">5,67</td><td class="n">3,12</td><td class="n neg">−2,55</td><td class="n">13,4</td><td class="n neg">−34 Kč</td></tr>
+          <tr class="total"><td>Květen–srpen</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">340,1 kWh</td><td class="n">+127 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><b>V létě nakupuje dráž než průměr trhu.</b> Není to selhání algoritmu — v červenci dokupoval jen 91,8 kWh, a to výhradně večer, kdy je baterie prázdná a slunce zapadlo. Tam není co optimalizovat, musí koupit za to, co zrovna je. Celý měřitelný efekt se odehrál v dubnu a květnu, kdy je na síti přebytek soláru a dá se nakupovat do záporu.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>Efekt za 172 dnů podle toho, co vezmeme jako srovnávací základ</caption>
+        <thead><tr><th>Základ — co by platil bez optimalizace</th><th class="n">Kč/kWh</th><th class="n">Efekt</th><th>Zdroj základu</th></tr></thead>
+        <tbody>
+          <tr><td>Prostý 24hodinový průměr trhu</td><td class="n">2,62</td><td class="n">621 Kč</td><td><i class="chip c-meas">Měřeno</i> 91 dnů</td></tr>
+          <tr class="total"><td>Noční a večerní okno — zbytkový odběr bez řízení</td><td class="n">3,28</td><td class="n">1 215 Kč</td><td><i class="chip c-meas">Měřeno</i> 1 000 hodin</td></tr>
+          <tr><td>Mirek — reálný zákazník s FVE bez optimalizace</td><td class="n">4,10</td><td class="n">1 953 Kč</td><td><i class="chip c-meas">Měřeno</i> cid 6</td></tr>
+          <tr><td>Jakub — reálný zákazník s FVE bez optimalizace</td><td class="n">4,92</td><td class="n">2 691 Kč</td><td><i class="chip c-meas">Měřeno</i> cid 2</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>Ani v nejpříznivější variantě nepokryje předplatné</h3>
+      <p>Guard Basic za 172 dnů stojí 2 844 Kč. Efekt na nákupní ceně je 621 až 2 691 Kč. <b>Ve všech čtyřech variantách je zákazník v mínusu</b>, v nejpříznivější o 153 Kč. To je při 900 kWh ročního odběru matematicky nevyhnutelné — na tom objemu se paušál uhrát nedá a žádná lepší optimalizace to nezmění.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Spirály — 690,9 kWh do akumulační nádrže · největší neznámá výpočtu</caption>
+        <thead><tr><th>Co to nahradilo</th><th class="n">Při ušlém výkupu 1,05</th><th class="n">Při ušlém výkupu 1,70</th></tr></thead>
+        <tbody>
+          <tr><td>Elektrokotel (5,50 Kč/kWh)</td><td class="n pos">+3 072 Kč</td><td class="n pos">+2 623 Kč</td></tr>
+          <tr><td>Plyn (~2,20 Kč/kWh)</td><td class="n">+795 Kč</td><td class="n">+345 Kč</td></tr>
+          <tr class="total"><td>Dřevo (~1,20 Kč/kWh)</td><td class="n">+104 Kč</td><td class="n neg">−345 Kč</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Roman má kotel Atmos na dřevo <b>i</b> elektrické spirály Protherm. Poměr neznám. Pokud spirály nahrazují dřevo, je posílání přebytku do nádrže <b>ztrátové</b> — ta energie by v síti vydělala víc. Rozpětí přes 3 400 Kč na jediné neznámé.</p>
+
+    <div class="callout">
+      <h3>A nakonec to nejtvrdší</h3>
+      <p>Příznak <code class="num">adaptive_learner_enabled</code> je zapnutý u jednoho zákazníka z pěti — u Romana. Mirek, Jakub, Miroslav i Libor ho mají vypnutý. Ať už je efekt Guardu jakýkoli, <b>dnes se realizuje na jednom domě, a je to dům zakladatele.</b> Než se řeší znění banneru, patří se zapnout optimalizaci u zbylých čtyř a začít měřit — jinak se ta čísla nebudou mít odkud vzít.</p>
+    </div>
+  </section>
+
   <!-- ============ THE BLOCKER ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">04 — Nález, který mění výpočet</p>
+      <p class="eyebrow">05 — Nález, který mění výpočet</p>
       <h2>Ceny v naší databázi neobsahují distribuci</h2>
     </div>
 
@@ -541,7 +643,7 @@
   <!-- ============ MEASURED ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">05 — Naměřená data</p>
+      <p class="eyebrow">06 — Naměřená data</p>
       <h2>Dvě instalace, nic dopočítaného</h2>
     </div>
 
@@ -575,7 +677,7 @@
   <!-- ============ FULL COST ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">06 — Plný nákladový model</p>
+      <p class="eyebrow">07 — Plný nákladový model</p>
       <h2>Všechny složky, včetně těch, které se v reportech nezobrazují</h2>
     </div>
 
@@ -621,7 +723,7 @@
   <!-- ============ PRODUCT ECONOMICS ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">07 — Co to znamená pro cenu produktu</p>
+      <p class="eyebrow">08 — Co to znamená pro cenu produktu</p>
       <h2>Na arbitráži spot/fix se paušál nezaplatí</h2>
     </div>
 
@@ -630,7 +732,7 @@
         <caption>Romanova výhoda ze spotu proti ceně předplatného, stejné období</caption>
         <thead><tr><th>Položka</th><th class="n">172 dnů</th><th>Poznámka</th></tr></thead>
         <tbody>
-          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 06</td></tr>
+          <tr><td>Výhoda spotu proti fixu</td><td class="n pos">2 480 Kč</td><td>viz sekce 07</td></tr>
           <tr><td>Guard Basic · 499 Kč/měs.</td><td class="n neg">2 844 Kč</td><td>nejlevnější plán</td></tr>
           <tr><td>Guard Standard · 999 Kč/měs.</td><td class="n neg">5 694 Kč</td><td>plán z finančního plánu</td></tr>
           <tr class="total"><td>Bilance na nejlevnějším plánu</td><td class="n neg">−364 Kč</td><td>zákazník je v minusu</td></tr>
@@ -657,7 +759,7 @@
   <!-- ============ REJECTED ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">08 — Zamítnuto</p>
+      <p class="eyebrow">09 — Zamítnuto</p>
       <h2>Tvrzení, která na banner nedám, a proč</h2>
     </div>
 
@@ -676,7 +778,7 @@
       </div>
       <div class="reject">
         <q>Naši zákazníci na elektřině vydělávají</q>
-        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 04.</span>
+        <span>Plyne z reportované bilance, ta ale nezahrnuje distribuci. Po dopočtu je Roman v minusu. Viz sekce 05.</span>
       </div>
       <div class="reject">
         <q>Návratnost FVE za X let</q>
@@ -688,7 +790,7 @@
   <!-- ============ GAPS ============ -->
   <section>
     <div class="sec-head">
-      <p class="eyebrow">09 — Co potřebuju</p>
+      <p class="eyebrow">10 — Co potřebuju</p>
       <h2>Sedm věcí, po kterých banner unese tvrdší tvrzení</h2>
     </div>
 
