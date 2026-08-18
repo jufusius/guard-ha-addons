@@ -2,7 +2,7 @@ name: "Guard Network Scanner"
 description: "Automaticky skenuje vaši síť a reportuje zařízení na Guard IoT server pro správu a onboarding."
 version: "1.2.0"
 slug: guard-scanner
-url: "https://github.com/jufusi/guard-ha-addons"
+url: "https://github.com/jufusius/guard-ha-addons"
 arch:
   - amd64
   - aarch64

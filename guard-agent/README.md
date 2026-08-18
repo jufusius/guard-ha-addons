@@ -1,6 +1,6 @@
 # Guard Agent
 
-[![Verze](https://img.shields.io/badge/version-1.6.0-blue.svg)](CHANGELOG.md)
+[![Verze](https://img.shields.io/badge/version-1.8.1-blue.svg)](CHANGELOG.md)
 [![Architektury](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64%20%7C%20armv7%20%7C%20armhf%20%7C%20i386-green.svg)](#)
 [![Licence](https://img.shields.io/badge/license-MIT-lightgrey.svg)](#)
 
@@ -33,11 +33,14 @@ Vzdálený management agent pro [Guard IoT](https://guard.cz) platformu — zjed
 | `scan_interval` | int    | `30`                     | Interval síťového skenu v minutách (5–1440).                   |
 | `tuya_scan`     | bool   | `true`                   | Detekce Tuya/Smart Life zařízení přes UDP broadcast.           |
 
-## Co je nového v 1.6.0
+## Co je nového v 1.8.1
 
-**Bidirectional enrollment** — manuální kopírování HA tokenu z portálu už není potřeba. Po instalaci se agent sám zaregistruje, vygeneruje token (platný 10 let) a předá Guard serveru kompletní metadata HA instance.
+- **1.8.1** — nativní command `list_directory` (výpis adresáře v sandboxu `/homeassistant`) a alias `restart` pro `restart_ha`.
+- **1.8.0** — poll cadence příkazů z MCP serveru 60 s → 10 s.
+- **1.7.0** — v2 API routes (`/api/v2/…`) + `X-Agent-Key` header.
+- **1.6.x** — bidirectional enrollment: po instalaci se agent sám zaregistruje, vygeneruje token (platný 10 let) a předá Guard serveru metadata HA instance.
 
-Plný changelog: [CHANGELOG.md](CHANGELOG.md)
+Aktuální verze je vždy v `config.yaml`; plný changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Podpora
 

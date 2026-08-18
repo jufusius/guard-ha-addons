@@ -18,8 +18,8 @@ Oficiální repozitář Home Assistant addonů [Guard IoT](https://guard.cz) pla
 
 | Addon | Popis | Verze |
 |-------|-------|-------|
-| **[Guard Agent](guard-agent/)** | Vzdálená správa HA, auto-enrollment, telemetrie FVE/TČ, file management. | [1.6.0](guard-agent/CHANGELOG.md) |
-| **[Guard Network Scanner](guard-scanner/)** | Automatický síťový scan + Tuya/Smart Life discovery. | 1.1.2 |
+| **[Guard Agent](guard-agent/)** | Vzdálená správa HA, auto-enrollment, telemetrie FVE/TČ, file management. | [1.8.1](guard-agent/CHANGELOG.md) |
+| **[Guard Network Scanner](guard-scanner/)** | Automatický síťový scan + Tuya/Smart Life discovery. | 1.2.0 |
 
 ## Co je Guard IoT
 
