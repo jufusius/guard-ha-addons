@@ -1,6 +1,6 @@
 # Guard Agent
 
-[![Verze](https://img.shields.io/badge/version-1.8.1-blue.svg)](CHANGELOG.md)
+[![Verze](https://img.shields.io/badge/version-1.9.0-blue.svg)](CHANGELOG.md)
 [![Architektury](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64%20%7C%20armv7%20%7C%20armhf%20%7C%20i386-green.svg)](#)
 [![Licence](https://img.shields.io/badge/license-MIT-lightgrey.svg)](#)
 
@@ -33,8 +33,9 @@ Vzdálený management agent pro [Guard IoT](https://guard.cz) platformu — zjed
 | `scan_interval` | int    | `30`                     | Interval síťového skenu v minutách (5–1440).                   |
 | `tuya_scan`     | bool   | `true`                   | Detekce Tuya/Smart Life zařízení přes UDP broadcast.           |
 
-## Co je nového v 1.8.1
+## Co je nového v 1.9.0
 
+- **1.9.0** — LLAT se mintuje přes dedikovaný servisní účet „Guard" (WebSocket `config/auth`), `install_cloudflared` discoveruje skutečný slug addonu a ověřuje instalaci, automatický `http:`/`trusted_proxies` blok pro Cloudflared (s `.bak` zálohou a rollbackem), `_supervisor_cmd` propaguje HTTP status a zvládá non-JSON odpovědi.
 - **1.8.1** — nativní command `list_directory` (výpis adresáře v sandboxu `/homeassistant`) a alias `restart` pro `restart_ha`.
 - **1.8.0** — poll cadence příkazů z MCP serveru 60 s → 10 s.
 - **1.7.0** — v2 API routes (`/api/v2/…`) + `X-Agent-Key` header.

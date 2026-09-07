@@ -4,6 +4,16 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.9.0] — 2026-07-04
+
+### Fixed
+
+- **`install_cloudflared` — discovery slugu místo hardcode (FIX a).** Default slug `a0d7b954_cloudflared` neexistoval (reálně `9074a9fa_cloudflared`, ale hash je závislý na repo). Nově se po přidání community repo + `store/reload` skutečný slug **discoveruje** z `store/addons` (slug končící `_cloudflared` nebo name/repository obsahující cloudflared/brenner). Explicitní `payload.addon_slug` má přednost jako override. `data_folder` už nehardcoduje slug (`addon_configs/{slug}`). Když discovery nic nenajde → `ok:False` + error (nehádá se hardcode).
+- **`install_cloudflared` — verifikace instalace (FIX a).** Po install/options/restart se kontroluje `GET addons`, že discovered slug je mezi nainstalovanými a addon je started/running. Do návratu přidán `installed_verified`. Bez ověření se už nehlásí success naslepo.
+- **Auto-inject `http:`/`trusted_proxies` do configuration.yaml (FIX b).** Cloudflared vždy přidává `X-Forwarded-For` → HA bez `use_x_forwarded_for`+`trusted_proxies` vrací HTTP 400. Nový helper `_ensure_http_proxy_config()` idempotentně přidá blok s hassio rozsahem `172.30.32.0/23`, dělá `.bak` zálohu, spustí `core/check` a při nevalidním configu ROLLBACKuje. HA Core restart NEdělá automaticky (vrací `ha_restart_required`), volitelně `auto_restart_ha` v payloadu. PyYAML se v addonu neinstaluje → běží konzervativní textová větev (existující `http:` blok needituje naslepo → `needs_manual`).
+- **LLAT mint přes servisní účet (FIX c).** Původní REST mint `POST core/api/auth/long_lived_access_token` se SUPERVISOR_TOKENem nefungoval (systémový user "Supervisor" nesmí vlastnit LLAT). Nový helper `_mint_llat_via_service_account()` vytvoří dedikovaný admin účet "Guard" přes WebSocket (`config/auth/*`), přihlásí se přes `login_flow` a mintne LLAT jako reálný user. Idempotentní (přeskočí create pokud účet existuje), recovery backup hesla+LLAT do `/share/guard/ha-service-account.json` (0o600). Starý REST mint zůstává jako fallback.
+- **`_supervisor_cmd` — mimetype + status propagace (FIX d).** `await resp.json()` padalo na non-JSON odpovědích (`core/check` vrací text, prázdné 200) a HTTP status se nepropagoval (4xx/5xx s JSON body vypadalo jako success). Nově `resp.json(content_type=None)` s fallbackem na `{"raw": text}` a status vždy pod klíčem `_status` (existující callery na `.get("data")`/`.get("result")` se nerozbíjí).
+
 ## [1.8.1] — 2026-06-29
 
 ### Added

@@ -43,7 +43,7 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.8.1"
+VERSION = "1.9.0"
 ENROLL_SENTINEL = "/data/enrolled.json"
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
@@ -1054,11 +1054,14 @@ async def _execute_command(command, payload):
             log.warning("  install_cloudflared: backup failed: %s", e)
 
         #CC- Slug pro Cloudflared addon — community repo brenner-tobias/ha-addons.
-        addon_slug = payload.get("addon_slug", "a0d7b954_cloudflared")
+        #CC- FIX(a): žádný hardcode default. Slug = hash závislý na repo (reálně 9074a9fa_cloudflared
+        #CC-   na HAOS, jinde jiný). Discovery ze store; explicitní payload.addon_slug má přednost (override).
+        addon_slug_override = payload.get("addon_slug")  #CC- None pokud nezadán → discovery
         repo_url = payload.get("repo_url", "https://github.com/brenner-tobias/ha-addons")
+        auto_restart_ha = bool(payload.get("auto_restart_ha", False))
 
         #CC- Step 0 (1.6.1): ensure community repo přidaný a addon dostupný.
-        #CC- Bez tohoto kroku má čerstvá HA instalace addon_slug=404 → install fail.
+        #CC- Bez tohoto kroku má čerstvá HA instalace addon slug nedostupný → install fail.
         #CC- Idempotentni: list repositories, pokud chybí → POST + reload + krátký wait.
         repo_added = False
         try:
@@ -1083,20 +1086,56 @@ async def _execute_command(command, payload):
             else:
                 log.info("  install_cloudflared: community repo already present")
         except Exception as e:
-            log.warning("  install_cloudflared: repo check/add failed: %s — pokračuji s install (může selhat)", e)
+            log.warning("  install_cloudflared: repo check/add failed: %s — pokračuji s discovery (může selhat)", e)
+
+        #CC- FIX(a): discovery skutečného slugu ze store/addons (po repo add + reload).
+        #CC-   Hledáme addon jehož slug končí na _cloudflared NEBO name/repository obsahuje cloudflared/brenner.
+        #CC-   Explicitní payload.addon_slug override má vždy přednost.
+        addon_slug = addon_slug_override
+        if not addon_slug:
+            try:
+                store_addons_resp = await _supervisor_cmd("GET", "store/addons")
+                addons_list = []
+                if isinstance(store_addons_resp, dict):
+                    sd = store_addons_resp.get("data")
+                    if isinstance(sd, dict):
+                        addons_list = sd.get("addons", []) or []
+                    elif isinstance(sd, list):
+                        addons_list = sd
+                    if not addons_list and isinstance(store_addons_resp.get("addons"), list):
+                        addons_list = store_addons_resp["addons"]
+                for a in addons_list:
+                    if not isinstance(a, dict):
+                        continue
+                    slug = str(a.get("slug", ""))
+                    name = str(a.get("name", "")).lower()
+                    repo = str(a.get("repository", "")).lower()
+                    if slug.endswith("_cloudflared") or "cloudflared" in name \
+                            or "cloudflared" in repo or "brenner" in repo or "brenner" in slug.lower():
+                        addon_slug = slug
+                        log.info("  install_cloudflared: discovered slug=%s (name=%s repo=%s)", slug, name, repo)
+                        break
+            except Exception as e:
+                log.warning("  install_cloudflared: slug discovery failed: %s", e)
+
+        if not addon_slug:
+            #CC- FIX(a): nehádej hardcode — bez slugu nemá smysl pokračovat.
+            return {"error": "cloudflared addon not found in store after repo add/reload",
+                    "ok": False, "repo_added": repo_added}
 
         #CC- Step 1: install (idempotentni — pokud uz instalovany, vrati 400 ktere ignorujeme)
         install_resp = await _supervisor_cmd("POST", f"store/addons/{addon_slug}/install")
         log.info("  install_cloudflared: install response: %s", json.dumps(install_resp)[:200])
 
         #CC- Step 2: set options s tokenem + hostname
+        #CC- FIX(a): data_folder už NEhardcoduje slug — používá discovered/override slug.
         options_resp = await _supervisor_cmd("POST", f"addons/{addon_slug}/options", {
             "options": {
                 "external_hostname": hostname,
                 "tunnel_token": token,
                 "additional_hosts": [],
                 "nginx_proxy_manager": False,
-                "data_folder": "addon_configs/a0d7b954_cloudflared"
+                "data_folder": f"addon_configs/{addon_slug}"
             }
         })
         log.info("  install_cloudflared: options response: %s", json.dumps(options_resp)[:200])
@@ -1105,15 +1144,67 @@ async def _execute_command(command, payload):
         start_resp = await _supervisor_cmd("POST", f"addons/{addon_slug}/restart")
         log.info("  install_cloudflared: restart response: %s", json.dumps(start_resp)[:200])
 
-        return {
-            "ok": True,
+        #CC- FIX(a): ověř instalaci — addon MUSÍ být v seznamu nainstalovaných + started/running.
+        #CC-   Bez toho hlásíme success naslepo. GET addons = instalované addony.
+        installed_verified = False
+        addon_state = None
+        try:
+            installed_resp = await _supervisor_cmd("GET", "addons")
+            installed_list = []
+            if isinstance(installed_resp, dict):
+                idata = installed_resp.get("data")
+                if isinstance(idata, dict):
+                    installed_list = idata.get("addons", []) or []
+                elif isinstance(idata, list):
+                    installed_list = idata
+            for a in installed_list:
+                if isinstance(a, dict) and str(a.get("slug", "")) == addon_slug:
+                    addon_state = a.get("state")
+                    #CC- installed = v seznamu; state started/running považujeme za běžící
+                    installed_verified = str(addon_state).lower() in ("started", "running", "startup") \
+                        or a.get("installed") is True or a.get("version") is not None
+                    break
+        except Exception as e:
+            log.warning("  install_cloudflared: install verification failed: %s", e)
+
+        #CC- FIX(b): auto-inject http:/trusted_proxies do configuration.yaml (cloudflared přidává XFF).
+        http_config = {"changed": False, "skipped": "not_run"}
+        try:
+            http_config = await _ensure_http_proxy_config()
+        except Exception as e:
+            #CC- fail-soft — nikdy neshoď install kvůli config helperu
+            http_config = {"changed": False, "error": f"ensure_http_proxy_config raised: {e}"}
+        log.info("  install_cloudflared: http_config=%s", json.dumps(http_config, ensure_ascii=False)[:200])
+
+        #CC- FIX(b): HA Core restart NEDĚLÁME automaticky uvnitř (řídí orchestrátor / restart_ha command),
+        #CC-   POKUD payload.auto_restart_ha=True — pak restartujeme sami.
+        restart_required = bool(http_config.get("restart_required"))
+        ha_restart_result = None
+        if restart_required and auto_restart_ha:
+            log.info("  install_cloudflared: auto_restart_ha=True + restart_required → restarting HA Core")
+            ha_restart_result = await _supervisor_cmd("POST", "core/restart")
+
+        result = {
+            "ok": bool(installed_verified),
             "addon_slug": addon_slug,
+            "slug_source": "override" if addon_slug_override else "discovery",
             "hostname": hostname,
             "tunnel_id": tunnel_id,
-            "install": install_resp.get("result", install_resp),
-            "options": options_resp.get("result", options_resp),
-            "restart": start_resp.get("result", start_resp),
+            "repo_added": repo_added,
+            "installed_verified": installed_verified,
+            "addon_state": addon_state,
+            "install": install_resp.get("result", install_resp) if isinstance(install_resp, dict) else install_resp,
+            "options": options_resp.get("result", options_resp) if isinstance(options_resp, dict) else options_resp,
+            "restart": start_resp.get("result", start_resp) if isinstance(start_resp, dict) else start_resp,
+            "http_config": http_config,
+            "ha_restart_required": restart_required and not auto_restart_ha,
         }
+        if ha_restart_result is not None:
+            result["ha_restart"] = ha_restart_result
+        if not installed_verified:
+            #CC- FIX(a): nereportuj success naslepo — addon není mezi nainstalovanými/běžícími.
+            result["error"] = "cloudflared addon not found among installed/running addons after install"
+        return result
 
     elif command == "verify_entity_states":
         #CC- Read specific entity states for cross-layer verification (AutomationHealthService)
@@ -1142,18 +1233,157 @@ async def _supervisor_cmd(method, path, body=None):
     async with ClientSession() as session:
         try:
             if method == "GET":
-                async with session.get(url, headers=headers) as resp:
-                    data = await resp.json()
-                    log.info("  _supervisor_cmd: HTTP %s response=%s", resp.status, json.dumps(data, ensure_ascii=False)[:500])
-                    return data
+                resp_ctx = session.get(url, headers=headers)
             else:
-                async with session.post(url, headers=headers, data=json.dumps(body) if body else None) as resp:
-                    data = await resp.json()
-                    log.info("  _supervisor_cmd: HTTP %s response=%s", resp.status, json.dumps(data, ensure_ascii=False)[:500])
-                    return data
+                resp_ctx = session.post(url, headers=headers, data=json.dumps(body) if body else None)
+            async with resp_ctx as resp:
+                #CC- FIX(d): non-JSON odpovědi (core/check text, prázdné 200) nesmí shodit parse.
+                #CC-   content_type=None vypne strict aiohttp check; při selhání fallback na raw text.
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    data = {"raw": await resp.text()}
+                #CC- FIX(d): status VŽDY propagovat pod _status (existující callery čtou .get("data")/.get("result") — nerozbíjí se).
+                #CC-   Pokud odpověď není dict (list/str/None), zabalit ať caller .get() nespadne.
+                if isinstance(data, dict):
+                    data["_status"] = resp.status
+                else:
+                    data = {"data": data, "_status": resp.status}
+                log_fn = log.info if 200 <= resp.status < 300 else log.warning
+                log_fn("  _supervisor_cmd: HTTP %s response=%s", resp.status, json.dumps(data, ensure_ascii=False)[:500])
+                return data
         except Exception as e:
             log.error("  _supervisor_cmd: EXCEPTION %s", e)
             return {"error": str(e)}
+
+
+#CC- FIX(b): hassio Docker interní síť — cloudflared vždy přidává X-Forwarded-For.
+#CC-   Bez use_x_forwarded_for + trusted_proxies vrací HA 400 na každý forwardovaný request.
+HASSIO_PROXY_CIDR = "172.30.32.0/23"
+
+
+async def _ensure_http_proxy_config():
+    """
+    FIX(b): Zajistí, že /homeassistant/configuration.yaml má
+    http.use_x_forwarded_for=true + trusted_proxies s hassio rozsahem (172.30.32.0/23).
+
+    Idempotentní: pokud už nakonfigurováno → {"changed": False}.
+    Fail-soft: každá chyba → {"changed": False, "error": ...}, nikdy nevyhodí výjimku ven.
+    Bezpečnost: .bak záloha před zápisem, po zápisu core/check; při nevalidním configu ROLLBACK z .bak.
+
+    PyYAML se v addonu NEinstaluje (viz Dockerfile — Alpine bez py3-yaml), proto primárně
+    běží konzervativní textová větev: přidá čistý http: blok JEN pokud žádný top-level http:
+    neexistuje. Existující http: blok bez proxy klíčů → needitovat naslepo (needs_manual),
+    riziko rozbití odsazení. Pokud by PyYAML v budoucnu byl přítomen, použije se bezpečný
+    parse→merge→dump.
+    """
+    cfg_path = _safe_path("configuration.yaml")
+    if not cfg_path:
+        return {"changed": False, "error": "cannot resolve configuration.yaml path"}
+    try:
+        if not cfg_path.exists():
+            return {"changed": False, "error": "configuration.yaml not found"}
+        original = cfg_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return {"changed": False, "error": f"read failed: {e}"}
+
+    #CC- Idempotence: už nakonfigurováno (proxy flag + hassio rozsah přítomny) → nic nedělej.
+    if "use_x_forwarded_for" in original and HASSIO_PROXY_CIDR in original:
+        return {"changed": False, "reason": "already configured"}
+
+    #CC- Detekce top-level http: bloku (na začátku řádku, ne odsazený, ne komentář).
+    import re
+    has_http_block = bool(re.search(r"(?m)^http:\s*(#.*)?$", original))
+
+    #CC- Zkus PyYAML (v addonu default NENÍ — fail-soft na textovou větev).
+    yaml_mod = None
+    try:
+        import yaml as _yaml  #CC- není v Dockerfile → typicky ImportError, spadne do textové větve
+        yaml_mod = _yaml
+    except Exception:
+        yaml_mod = None
+
+    new_content = None
+    if yaml_mod is not None:
+        #CC- Bezpečný parse→merge→dump (jen pokud PyYAML dostupný).
+        try:
+            doc = yaml_mod.safe_load(original) or {}
+            if not isinstance(doc, dict):
+                return {"changed": False, "error": "configuration.yaml root is not a mapping"}
+            http_block = doc.get("http")
+            if http_block is None or not isinstance(http_block, dict):
+                http_block = {}
+            http_block["use_x_forwarded_for"] = True
+            tp = http_block.get("trusted_proxies")
+            if not isinstance(tp, list):
+                tp = []
+            if HASSIO_PROXY_CIDR not in tp:
+                tp.append(HASSIO_PROXY_CIDR)
+            http_block["trusted_proxies"] = tp
+            doc["http"] = http_block
+            new_content = yaml_mod.safe_dump(doc, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        except Exception as e:
+            return {"changed": False, "error": f"yaml merge failed: {e}"}
+    else:
+        #CC- Konzervativní textová větev (bez PyYAML).
+        if has_http_block:
+            #CC- http: existuje bez proxy klíčů → needitovat naslepo (riziko odsazení).
+            log.warning("  _ensure_http_proxy_config: existing http: block without proxy keys — manual merge required")
+            return {"changed": False, "needs_manual": True,
+                    "reason": "existing http: block, manual merge required"}
+        #CC- Žádný http: blok → připoj čistý blok na konec.
+        suffix = "" if original.endswith("\n") or original == "" else "\n"
+        block = (
+            "\nhttp:\n"
+            "  use_x_forwarded_for: true\n"
+            "  trusted_proxies:\n"
+            f"    - {HASSIO_PROXY_CIDR}\n"
+        )
+        new_content = original + suffix + block
+
+    if new_content is None or new_content == original:
+        return {"changed": False, "reason": "no change produced"}
+
+    #CC- .bak záloha (stejný vzor jako handle_files_write) PŘED zápisem.
+    backup_path = None
+    try:
+        backup_path = cfg_path.with_suffix(cfg_path.suffix + f".bak.{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        backup_path.write_text(original, encoding="utf-8")
+    except Exception as e:
+        return {"changed": False, "error": f"backup failed: {e}"}
+
+    #CC- Zápis.
+    try:
+        cfg_path.write_text(new_content, encoding="utf-8")
+        log.info("  _ensure_http_proxy_config: http block written, running core/check")
+    except Exception as e:
+        return {"changed": False, "error": f"write failed: {e}"}
+
+    #CC- Config check přes Supervisor → HA core.
+    check_resp = await _supervisor_cmd("POST", "core/check")
+    #CC- HA core/check: valid => {"result":"ok"} (nebo _status 200). Neúspěch => rollback.
+    check_ok = False
+    if isinstance(check_resp, dict):
+        status = check_resp.get("_status")
+        result = str(check_resp.get("result", "")).lower()
+        raw = str(check_resp.get("raw", "")).lower()
+        if result == "ok":
+            check_ok = True
+        elif (status is None or (200 <= status < 300)) and not check_resp.get("error") \
+                and "error" not in result and "invalid" not in raw and "error" not in raw:
+            #CC- Prázdná/textová 2xx odpověď bez chybových markerů bereme jako valid.
+            check_ok = True
+
+    if not check_ok:
+        #CC- ROLLBACK — nikdy nenechat nevalidní config.
+        try:
+            cfg_path.write_text(original, encoding="utf-8")
+            log.warning("  _ensure_http_proxy_config: config check FAILED — rolled back from original")
+        except Exception as e:
+            log.error("  _ensure_http_proxy_config: ROLLBACK FAILED: %s (backup at %s)", e, backup_path)
+        return {"changed": False, "error": "config check failed", "check": check_resp}
+
+    return {"changed": True, "restart_required": True}
 
 
 async def _ha_service_call(domain, service, data):
@@ -1225,6 +1455,245 @@ def _fetch_key_entities():
             log.info("No KeyEntities configured on server, using pattern matching")
     except Exception as e:
         log.warning("Failed to fetch KeyEntities: %s (will use pattern matching)", e)
+
+
+import secrets as _secrets
+
+SERVICE_ACCOUNT_BACKUP = "/share/guard/ha-service-account.json"
+
+
+async def _ws_recv_json(ws):
+    """Receive one JSON message from an aiohttp WS, tolerant of frame types."""
+    msg = await ws.receive()
+    from aiohttp import WSMsgType
+    if msg.type == WSMsgType.TEXT:
+        return json.loads(msg.data)
+    if msg.type == WSMsgType.BINARY:
+        return json.loads(msg.data.decode("utf-8"))
+    #CC- CLOSE/ERROR/CLOSED → vrať sentinel, caller pozná podle chybějícího "type"
+    return {"type": "_ws_closed", "_frame": str(msg.type)}
+
+
+async def _ws_auth(ws, access_token):
+    """
+    HA WebSocket auth handshake: čekej auth_required → pošli auth → čekej auth_ok.
+    Vrací True při úspěchu, jinak False. Fail-soft.
+    """
+    try:
+        first = await _ws_recv_json(ws)
+        if first.get("type") != "auth_required":
+            #CC- Některé verze pošlou rovnou auth_ok/auth_invalid; zkusíme přesto poslat auth
+            log.warning("  _ws_auth: unexpected first frame: %s", str(first)[:120])
+        await ws.send_str(json.dumps({"type": "auth", "access_token": access_token}))
+        resp = await _ws_recv_json(ws)
+        if resp.get("type") == "auth_ok":
+            return True
+        log.warning("  _ws_auth: auth failed: %s", str(resp)[:160])
+        return False
+    except Exception as e:
+        log.warning("  _ws_auth: exception %s", e)
+        return False
+
+
+async def _ws_command(ws, msg_id, payload):
+    """Send a WS command with id, wait for the matching result frame. Returns dict or None."""
+    try:
+        frame = {"id": msg_id, **payload}
+        await ws.send_str(json.dumps(frame))
+        #CC- Čekej na frame se stejným id (přeskoč event/ping frames), bounded počet iterací.
+        for _ in range(20):
+            resp = await _ws_recv_json(ws)
+            if resp.get("type") == "_ws_closed":
+                return None
+            if resp.get("id") == msg_id:
+                return resp
+        return None
+    except Exception as e:
+        log.warning("  _ws_command(%s): exception %s", payload.get("type"), e)
+        return None
+
+
+async def _mint_llat_via_service_account(session, ha_url):
+    """
+    FIX(c): Vytvoří LLAT přes dedikovaný servisní účet "Guard" (username `guard`).
+
+    Původní REST mint (POST core/api/auth/long_lived_access_token se SUPERVISOR_TOKEN)
+    nefunguje — systémový user "Supervisor" nesmí vlastnit LLAT (404 / rejected).
+
+    Ověřený flow (ručně prošel při onboardingu Libora):
+      1. WS auth SUPERVISOR_TOKENem na ws://supervisor/core/websocket (má admin práva).
+      2. config/auth/list — idempotence: pokud `guard` existuje, přeskoč create.
+      3. config/auth/create name=Guard → user.id; provider/homeassistant/create username+heslo;
+         config/auth/update group_ids=[system-admin].
+      4. login_flow → login_flow/{flow_id} → auth/token (authorization_code) → user access_token.
+      5. NOVÝ WS auth tím user tokenem → auth/long_lived_access_token → LLAT string.
+      6. Recovery: heslo+LLAT do /share/guard/ha-service-account.json (0o600).
+
+    Fail-soft: jakákoli chyba → None (caller pak zkusí starý REST mint). Bounded ~stávající timeout.
+    Vrací LLAT string nebo None.
+    """
+    ws_url = f"{SUPERVISOR_URL}/core/websocket"
+    password = _secrets.token_urlsafe(32)
+    msg_id = 1
+
+    #CC- Krok 1-3: admin WS (supervisor token) — najdi/vytvoř servisní účet.
+    user_id = None
+    account_existed = False
+    try:
+        async with session.ws_connect(ws_url, heartbeat=None) as ws:
+            if not await _ws_auth(ws, SUPERVISOR_TOKEN):
+                log.warning("  _mint_llat_via_service_account: admin WS auth failed")
+                return None
+
+            #CC- 2) idempotence — existuje user 'guard'?
+            listed = await _ws_command(ws, msg_id, {"type": "config/auth/list"}); msg_id += 1
+            if listed and listed.get("success"):
+                for u in listed.get("result", []) or []:
+                    #CC- provider homeassistant username je v credentials; jméno "Guard" je v u.name
+                    if str(u.get("name", "")).lower() == "guard":
+                        user_id = u.get("id")
+                        account_existed = True
+                        log.info("  _mint_llat_via_service_account: existing 'Guard' account id=%s", user_id)
+                        break
+
+            #CC- 3) create pokud neexistuje
+            if not user_id:
+                created = await _ws_command(ws, msg_id, {"type": "config/auth/create", "name": "Guard"}); msg_id += 1
+                if not (created and created.get("success")):
+                    log.warning("  _mint_llat_via_service_account: auth/create failed: %s", str(created)[:160])
+                    return None
+                user_id = (created.get("result") or {}).get("user", {}).get("id") \
+                    or (created.get("result") or {}).get("id")
+                if not user_id:
+                    log.warning("  _mint_llat_via_service_account: no user.id in create result")
+                    return None
+                #CC- provider homeassistant credentials (username+password)
+                cred = await _ws_command(ws, msg_id, {
+                    "type": "config/auth/provider/homeassistant/create",
+                    "user_id": user_id, "username": "guard", "password": password,
+                }); msg_id += 1
+                if not (cred and cred.get("success")):
+                    log.warning("  _mint_llat_via_service_account: provider create failed: %s", str(cred)[:160])
+                    return None
+                #CC- admin group
+                upd = await _ws_command(ws, msg_id, {
+                    "type": "config/auth/update", "user_id": user_id, "group_ids": ["system-admin"],
+                }); msg_id += 1
+                if not (upd and upd.get("success")):
+                    log.warning("  _mint_llat_via_service_account: group update non-fatal: %s", str(upd)[:160])
+    except Exception as e:
+        log.warning("  _mint_llat_via_service_account: admin WS phase failed: %s", e)
+        return None
+
+    if account_existed:
+        #CC- Účet už existoval → heslo neznáme (uloženo jen při create). Bez hesla nedokážeme login flow.
+        #CC-   Zkus recovery soubor; pokud tam heslo je, použij ho. Jinak fail → caller fallback.
+        try:
+            from pathlib import Path as _P
+            bf = _P(SERVICE_ACCOUNT_BACKUP)
+            if bf.exists():
+                saved = json.loads(bf.read_text(encoding="utf-8"))
+                #CC- Pokud už máme uložený platný LLAT, rovnou ho vrať (nejlevnější idempotence).
+                if saved.get("llat"):
+                    log.info("  _mint_llat_via_service_account: reusing LLAT from recovery backup")
+                    return saved["llat"]
+                if saved.get("password"):
+                    password = saved["password"]
+                else:
+                    log.warning("  _mint_llat_via_service_account: 'Guard' exists but no stored password/LLAT — cannot login")
+                    return None
+            else:
+                log.warning("  _mint_llat_via_service_account: 'Guard' exists but no recovery backup — cannot login")
+                return None
+        except Exception as e:
+            log.warning("  _mint_llat_via_service_account: recovery read failed: %s", e)
+            return None
+
+    #CC- Krok 4: login jako reálný user přes HA core auth (proxováno Supervisorem pod core/...).
+    #CC-   client_id MUSÍ být URL s koncovým '/'. Cesty ověřit při deploji (viz report — nejistota).
+    client_id = (ha_url.rstrip("/") + "/")
+    user_token = None
+    try:
+        base = f"{SUPERVISOR_URL}/core"
+        hdr = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
+        #CC- 4a) login_flow start
+        async with session.post(f"{base}/auth/login_flow", headers=hdr, data=json.dumps({
+            "client_id": client_id, "handler": ["homeassistant", None], "redirect_uri": client_id,
+        })) as r:
+            lf = await r.json(content_type=None) if r.status == 200 else None
+        flow_id = (lf or {}).get("flow_id")
+        if not flow_id:
+            log.warning("  _mint_llat_via_service_account: login_flow start failed (status)")
+            return None
+        #CC- 4b) submit credentials
+        async with session.post(f"{base}/auth/login_flow/{flow_id}", headers=hdr, data=json.dumps({
+            "username": "guard", "password": password, "client_id": client_id,
+        })) as r:
+            step = await r.json(content_type=None) if r.status == 200 else None
+        code = (step or {}).get("result")
+        if not code or (step or {}).get("type") != "create_entry":
+            log.warning("  _mint_llat_via_service_account: login_flow submit no code: %s", str(step)[:160])
+            return None
+        #CC- 4c) exchange code → token (form-urlencoded)
+        form = f"grant_type=authorization_code&code={code}&client_id={client_id}"
+        async with session.post(f"{base}/auth/token", headers={
+            "Authorization": f"Bearer {SUPERVISOR_TOKEN}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }, data=form) as r:
+            tok = await r.json(content_type=None) if r.status == 200 else None
+        user_token = (tok or {}).get("access_token")
+        if not user_token:
+            log.warning("  _mint_llat_via_service_account: token exchange failed: %s", str(tok)[:120])
+            return None
+    except Exception as e:
+        log.warning("  _mint_llat_via_service_account: login flow failed: %s", e)
+        return None
+
+    #CC- Krok 5: NOVÝ WS auth user tokenem → mint LLAT jako ten user.
+    llat = None
+    try:
+        async with session.ws_connect(ws_url, heartbeat=None) as ws2:
+            if not await _ws_auth(ws2, user_token):
+                log.warning("  _mint_llat_via_service_account: user WS auth failed")
+                return None
+            res = await _ws_command(ws2, 1, {
+                "type": "auth/long_lived_access_token",
+                "client_name": f"Guard Agent {VERSION}",
+                "lifespan": 3650,
+            })
+            if res and res.get("success"):
+                llat = res.get("result")
+            else:
+                log.warning("  _mint_llat_via_service_account: LLAT mint failed: %s", str(res)[:160])
+                return None
+    except Exception as e:
+        log.warning("  _mint_llat_via_service_account: user WS phase failed: %s", e)
+        return None
+
+    if not llat:
+        return None
+
+    #CC- Krok 6: recovery backup (heslo + LLAT), restrictive perms 0o600. NEPÍŠEME do DevSecrets.
+    try:
+        from pathlib import Path as _P
+        bdir = _P("/share/guard")
+        bdir.mkdir(parents=True, exist_ok=True)
+        bf = bdir / "ha-service-account.json"
+        bf.write_text(json.dumps({
+            "username": "guard",
+            "password": password,
+            "llat": llat,
+            "user_id": user_id,
+            "saved_at": datetime.now().isoformat(),
+            "agent_version": VERSION,
+        }), encoding="utf-8")
+        try: bf.chmod(0o600)
+        except Exception: pass
+        log.info("  _mint_llat_via_service_account: recovery backup saved to %s", bf)
+    except Exception as e:
+        log.warning("  _mint_llat_via_service_account: recovery backup failed: %s", e)
+
+    return llat
 
 
 async def _enroll_once():
@@ -1320,36 +1789,50 @@ async def _enroll_once():
                 log.warning("Enroll: ha_url not detected, MCP enroll will fail — set HA external_url and restart addon")
                 return
 
-            #CC- 4) Mint Long-Lived Access Token via Supervisor → Core proxy
+            #CC- 4) Mint Long-Lived Access Token
             ha_token = None
+
+            #CC- FIX(c): PRIMÁRNÍ cesta — servisní účet "Guard" přes WS + login flow.
+            #CC-   Ověřeno ručně u Libora; starý REST mint (níže) nechán jako fallback.
             try:
-                #CC- HA REST API: POST /core/api/auth/long_lived_access_token
-                #CC- Lifespan in days, client_name for audit. Proxy uses SUPERVISOR_TOKEN as system user.
-                payload = json.dumps({
-                    "lifespan": 3650,
-                    "client_name": f"Guard Agent {VERSION} ({datetime.now().strftime('%Y-%m-%d')})"
-                }).encode()
-                async with session.post(
-                    f"{SUPERVISOR_URL}/core/api/auth/long_lived_access_token",
-                    headers=headers_sup, data=payload
-                ) as r:
-                    body = await r.text()
-                    if r.status == 200:
-                        #CC- HA returns either JSON with .token or raw token string — be defensive.
-                        try:
-                            j = json.loads(body)
-                            ha_token = j.get("token") if isinstance(j, dict) else (body if isinstance(j, str) else None)
-                            if not ha_token and isinstance(j, str):
-                                ha_token = j
-                        except Exception:
-                            ha_token = body.strip().strip('"')
-                    else:
-                        log.warning("Enroll: LLAT mint HTTP %s: %s", r.status, body[:300])
+                ha_token = await _mint_llat_via_service_account(session, ha_url)
+                if ha_token:
+                    log.info("Enroll: LLAT minted via service account 'Guard'")
             except Exception as e:
-                log.warning("Enroll: LLAT mint failed: %s", e)
+                log.warning("Enroll: service-account LLAT mint raised: %s", e)
+
+            #CC- Fallback: starý REST mint (POST core/api/auth/long_lived_access_token se SUPERVISOR_TOKEN).
+            #CC-   Pravděpodobně nefunguje (systémový user Supervisor nesmí vlastnit LLAT), ale zkusíme.
+            if not ha_token:
+                try:
+                    log.info("Enroll: service-account mint unavailable → trying legacy REST mint")
+                    #CC- HA REST API: POST /core/api/auth/long_lived_access_token
+                    #CC- Lifespan in days, client_name for audit. Proxy uses SUPERVISOR_TOKEN as system user.
+                    payload = json.dumps({
+                        "lifespan": 3650,
+                        "client_name": f"Guard Agent {VERSION} ({datetime.now().strftime('%Y-%m-%d')})"
+                    }).encode()
+                    async with session.post(
+                        f"{SUPERVISOR_URL}/core/api/auth/long_lived_access_token",
+                        headers=headers_sup, data=payload
+                    ) as r:
+                        body = await r.text()
+                        if r.status == 200:
+                            #CC- HA returns either JSON with .token or raw token string — be defensive.
+                            try:
+                                j = json.loads(body)
+                                ha_token = j.get("token") if isinstance(j, dict) else (body if isinstance(j, str) else None)
+                                if not ha_token and isinstance(j, str):
+                                    ha_token = j
+                            except Exception:
+                                ha_token = body.strip().strip('"')
+                        else:
+                            log.warning("Enroll: legacy LLAT mint HTTP %s: %s", r.status, body[:300])
+                except Exception as e:
+                    log.warning("Enroll: legacy LLAT mint failed: %s", e)
 
             if not ha_token:
-                log.warning("Enroll: ha_token unavailable, aborting (will retry next start)")
+                log.warning("Enroll: ha_token unavailable (service account + legacy both failed), aborting (will retry next start)")
                 return
 
             #CC- 5) POST to MCP /api/agent/{apiKey}/enroll
