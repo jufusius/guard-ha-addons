@@ -166,9 +166,11 @@ class SthermClient:
                         self.values[k] = v
 
         self.last_update = datetime.now(timezone.utc)
-        #CC- Debug: logovat stav coil parametrů po každém čtení
-        coils = {k: v for k, v in self.values.items() if k.startswith("c")}
-        _LOGGER.warning("S-therm: GET_VALUES coils: %s", coils)
+        #CC- 2026-09-17: rutinní čtení coilů patří do DEBUG. Na WARNING zahlcovalo log zákazníka
+        #CC-   (cid=2: ~1 řádek/min navíc) a ubíralo místo skutečným chybám — log HA drží jen okno.
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            coils = {k: v for k, v in self.values.items() if k.startswith("c")}
+            _LOGGER.debug("S-therm: GET_VALUES coils: %s", coils)
         self._notify_update()
         return self.values
 
@@ -332,7 +334,7 @@ class SthermClient:
         self._pending_response = self._loop.create_future()
 
         topic = f"{self._session_topic}/installationRequest"
-        _LOGGER.warning("S-therm: Publishing to %s", topic)
+        _LOGGER.debug("S-therm: Publishing to %s", topic)
         self._mqtt_client.publish(topic, json.dumps(payload))
 
         try:
