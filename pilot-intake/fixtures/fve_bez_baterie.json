@@ -1,9 +1,9 @@
 {
- "_pozn": "FVE ano, baterie 0. Sestaveno z kontraktu, ne ze stagingu.",
+ "_pozn": "FVE ano, baterie 0. Tvar = tělo Landing.submit (fvesmart-app.js); uložení do DetailsJson neověřeno.",
  "Name": "Test Pilot",
  "Email": null,
  "Phone": "+420 600 000 000",
- "Source": "pilot",
- "Page": "/#uspora",
- "DetailsJson": "{\"plan\": \"start\", \"odhadKcMes\": null, \"fve\": \"ano\", \"kwp\": 6.5, \"baterieKwh\": 0, \"tarif\": \"spot\", \"rozsah\": \"tc\", \"kraj\": \"STC\", \"quiz\": {\"q1\": \"x\", \"q2\": \"x\", \"q3\": \"x\", \"q4\": \"x\", \"q5\": \"x\", \"q6\": \"x\"}}"
+ "Source": "landing",
+ "Page": "/",
+ "DetailsJson": "{\"source\": \"landing\", \"plan\": \"start\", \"municipality\": \"Kolín\", \"hasFve\": \"yes\", \"answers\": \"{\\\"fve\\\": \\\"yes\\\", \\\"kwp\\\": \\\"5\\\", \\\"bat\\\": \\\"0\\\", \\\"tarif\\\": \\\"spot\\\", \\\"scope\\\": \\\"opt\\\", \\\"kraj\\\": \\\"Středočeský\\\"}\"}"
 }

@@ -1,9 +1,9 @@
 {
- "_pozn": "FVE 'nevím', kvíz přesto spočítal Kč (tichý default 8 kWp). Sestaveno z kontraktu, ne ze stagingu.",
+ "_pozn": "FVE 'Nevím' — kvíz předvyplní kwp 8. Tvar = tělo Landing.submit (fvesmart-app.js); uložení do DetailsJson neověřeno.",
  "Name": "Test Pilot",
  "Email": "test@example.com",
  "Phone": null,
- "Source": "pilot",
- "Page": "/#uspora",
- "DetailsJson": "{\"plan\": \"full\", \"odhadKcMes\": 734, \"fve\": \"nevim\", \"kwp\": 8, \"baterieKwh\": 10, \"tarif\": \"nevim\", \"rozsah\": \"full\", \"kraj\": null, \"quiz\": {\"q1\": \"x\", \"q2\": \"x\", \"q3\": \"x\", \"q4\": \"x\", \"q5\": \"x\", \"q6\": \"x\"}}"
+ "Source": "landing",
+ "Page": "/",
+ "DetailsJson": "{\"source\": \"landing\", \"plan\": \"full\", \"estimate\": \"734\", \"hasFve\": \"\", \"answers\": \"{\\\"fve\\\": \\\"unknown\\\", \\\"kwp\\\": \\\"8\\\", \\\"bat\\\": \\\"14\\\", \\\"tarif\\\": \\\"unknown\\\", \\\"scope\\\": \\\"full\\\", \\\"kraj\\\": \\\"Jihomoravský\\\"}\"}"
 }

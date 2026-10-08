@@ -11,7 +11,7 @@ def load(name):
     return json.loads((FIX / name).read_text(encoding="utf-8"))
 
 
-def with_details(name, **changes):
+def with_details(name, ans=None, **changes):
     row = load(name)
     details = json.loads(row["DetailsJson"])
     for k, v in changes.items():
@@ -19,6 +19,14 @@ def with_details(name, **changes):
             details.pop(k, None)
         else:
             details[k] = v
+    if ans:
+        a = json.loads(details["answers"])
+        for k, v in ans.items():
+            if v is ...:
+                a.pop(k, None)
+            else:
+                a[k] = v
+        details["answers"] = json.dumps(a)
     row["DetailsJson"] = json.dumps(details)
     return row
 
@@ -44,7 +52,7 @@ class ContractTest(unittest.TestCase):
         self.assertNotIn("baterie_kwh", [o["pole"] for o in form["otevrene"]])
 
     def test_bez_baterie_20kc_je_chyba(self):
-        form, audit = build_form(with_details("fve_bez_baterie.json", odhadKcMes=20))
+        form, audit = build_form(with_details("fve_bez_baterie.json", estimate="20"))
         self.assertIsNone(form["odhad_kc_mes"])
         self.assertIn("odhad_zahozen", {a["typ"] for a in audit})
 
@@ -60,15 +68,41 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(form["plan"], "opt")
         self.assertEqual(form["odhad_kc_mes"], 490)
         self.assertEqual(form["duveryhodnost"], "orientacni")
-        self.assertEqual(holes(audit), ["kraj", "quiz.q6"])
+        self.assertEqual(form["kwp"], 12)
+        self.assertEqual(form["kraj"], "Jihočeský")
+        self.assertEqual(form["identita"]["obec"], "Tábor")
+        self.assertEqual(holes(audit), [])
 
     def test_rozsah_full_dava_plan_full(self):
-        form, _ = build_form(with_details("fve_baterie.json", rozsah="full"))
+        form, _ = build_form(with_details("fve_baterie.json", ans={"scope": "full"}))
         self.assertEqual(form["plan"], "full")
 
-    def test_bez_quiz_je_dira(self):
-        _, audit = build_form(with_details("fve_baterie.json", quiz=...))
-        self.assertIn("quiz", holes(audit))
+    def test_bez_answers_je_dira(self):
+        form, audit = build_form(with_details("fve_baterie.json", answers=...))
+        self.assertIn("answers", holes(audit))
+        # FVE z rádia formuláře, baterie neznámá -> start, žádné Kč
+        self.assertEqual(form["fve"], "ano")
+        self.assertEqual(form["plan"], "start")
+        self.assertIsNone(form["odhad_kc_mes"])
+
+    def test_chybejici_odpoved_je_dira(self):
+        _, audit = build_form(with_details("fve_baterie.json", ans={"kraj": ...}))
+        self.assertEqual(holes(audit), ["answers.kraj"])
+
+    def test_fve_rozpor_kviz_vs_formular(self):
+        form, audit = build_form(with_details("fve_baterie.json", hasFve="no"))
+        self.assertEqual(form["fve"], "ano")
+        self.assertIn("fve_rozpor", {a["typ"] for a in audit})
+
+    def test_tarif_nevim_s_odhadem_je_v_auditu(self):
+        form, audit = build_form(with_details("fve_baterie.json", ans={"tarif": "unknown"}))
+        self.assertEqual(form["tarif"], "nevim")
+        self.assertEqual(form["odhad_kc_mes"], 490)
+        self.assertIn("odhad_tarif_nevim", {a["typ"] for a in audit})
+
+    def test_tarif_fix_neni_vtnt(self):
+        form, _ = build_form(load("bez_fve_bug20.json"))
+        self.assertEqual(form["tarif"], "fix")
 
     def test_prazdny_details_consult_null_a_vse_chybi(self):
         row = {"Name": "TEST", "Email": "t@example.com", "Phone": None,
@@ -77,8 +111,7 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(form["identita"]["kontakt"], "t@example.com")
         self.assertEqual(form["plan"], "consult")
         self.assertIsNone(form["odhad_kc_mes"])
-        self.assertEqual(holes(audit), ["plan", "odhadKcMes", "fve", "kwp", "baterieKwh",
-                                        "tarif", "rozsah", "kraj", "quiz"])
+        self.assertEqual(holes(audit), ["plan", "answers"])
 
     def test_neplatny_details_json(self):
         row = {"Name": "TEST", "Email": "t@example.com", "DetailsJson": "{nejson"}
@@ -103,12 +136,13 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(krit["kontakt"]["kriticnost"], "blokuje_hovor")
         self.assertEqual(krit["faktura"]["kriticnost"], "blokuje_odhad")
         self.assertIn("xeereava", krit["faktura"]["pozn"])
-        self.assertEqual(krit["kraj"]["kriticnost"], "muze_pockat")
+        self.assertEqual(krit["ean"]["kriticnost"], "muze_pockat")
 
     def test_prompt_nese_null_ne_nulu(self):
         form, _ = build_form(load("bez_fve_bug20.json"))
         prompt = build_prompt(form)
         self.assertIn('"odhad_kc_mes": null', prompt)
+        self.assertIn("pásma z kvízu", prompt)
         self.assertIn("částku spočítáme z faktury", prompt)
 
 

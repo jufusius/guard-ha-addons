@@ -14,64 +14,63 @@ python3 -m unittest -v test_intake
 ## Odkud data chodí
 
 - Kvíz: FveSmart, sekce `#uspora` (markup `Content__LandingPage.liquid:98`, logika `fvesmart-app.js`).
-- Pilot i kvíz: `POST https://mcp.jufusi.us/api/public/leads` (`fvesmart-app.js:1737`) → `dbo.Leads`.
+- Pilot i kvíz: `POST https://mcp.jufusi.us/api/public/leads` (`submitToListina`) → `dbo.Leads`.
 - Sloupce: `Name` (povinné), `Email`, `Phone`, `Source`, `Page`, `DetailsJson` + souhlasy a stav.
   Plán, odhad ani odpovědi kvízu sloupce nemají — žijí jen v `DetailsJson`.
 - Foto faktury: Formspree `xeereava`, mimo `dbo.Leads`, nepárováno. Ve formuláři zůstává
   jako otevřená položka `faktura` (blokuje odhad) s poznámkou o kanálu.
 
-## Kontrakt `DetailsJson`
+## Vstup: tělo `Landing.submit` (ověřeno v `fvesmart-app.js`)
+
+Přihláška z landingu (`source: "landing"`) posílá:
 
 ```json
 {
-  "plan": "start|opt|full|consult",
-  "odhadKcMes": null,
-  "fve": "ano|ne|nevim",
-  "kwp": null,
-  "baterieKwh": null,
-  "tarif": "spot|vtnt|nevim",
-  "rozsah": "start|bojler|tc|ev|full",
-  "kraj": null,
-  "quiz": { "q1": "", "q2": "", "q3": "", "q4": "", "q5": "", "q6": "" }
+  "source": "landing", "name": "…", "contact": "telefon nebo e-mail",
+  "municipality": "…", "hasFve": "yes|no", "plan": "start|opt|full|consult|referral|partner",
+  "estimate": "490",
+  "answers": "{\"fve\":\"yes|no|unknown\",\"kwp\":\"3|5|8|12\",\"bat\":\"0|8|14\",\"tarif\":\"spot|fix|unknown\",\"scope\":\"start|opt|full\",\"kraj\":\"Jihomoravský\"}",
+  "page": "/", "consent": true, "website": "", "policyVersion": "2026-10"
 }
 ```
 
-- Chybějící klíč → `audit: chybi_hidden_pole` (pod názvem z `DetailsJson`), hodnota null,
-  plán podle kontraktu (bez `fve` = consult), částka null.
-- Chybějící `quiz` nebo prázdná otázka (`quiz.q6`) je díra. **Server je nesmí tiše zahodit** —
-  dnes `/api/public/leads` validuje jen `name`; požadavek na MCP: odmítnout nebo označit lead
-  bez `quiz`, ne ho přijmout s 202 bez odpovědí.
-- Mapování názvů je v `DETAILS_KEYS` / `QUIZ_KEY` v `intake.py`. Až bude k dispozici tělo
-  requestu z `fvesmart-app.js`, při nesouladu se opravuje **generátor na skutečný klíč**, ne web.
+- `submitToListina` prázdné stringy **neposílá**: bez dokončeného kvízu chybí `answers`,
+  bez shody plánu s výsledkem kvízu chybí `estimate`.
+- `answers` je JSON **string**, ne objekt. Generátor ho rozbalí.
+- `kwp` a `bat` jsou pásma (12 = „10+“, 8 = „do 10 kWh“, 14 = „10 kWh a víc“), ne změřené hodnoty.
+  Prompt to agentovi říká.
+- `kraj` je název kraje, ne kód. `tarif: fix` je fixní tarif, ne VT/NT — generátor ho nepřejmenovává.
+- FVE: má přednost `answers.fve`; rádio `hasFve` jen když kvíz chybí, při rozporu `audit: fve_rozpor`.
+- Generátor předpokládá, že server uloží klíče těla do `DetailsJson` pod stejnými názvy.
+  **Neověřeno** — handler `LeadIntake` na MCP nevidím a `dbo.Leads` je prázdná.
 
-## Kontrakt estimate (platí, i když kód kvízu počítá jinak)
+Mapování je jen v `BODY_KEYS` / `ANSWER_KEYS` / `VALUE_MAP` v `intake.py`.
+Díra = chybí `plan`, `answers` nebo některá ze 6 odpovědí (`answers.kraj` …) → `audit: chybi_hidden_pole`.
 
-| Vstup | Plán | `odhad_kc_mes` |
+## Audit `JeanQuiz.result` + `Landing.estimate` proti kontraktu
+
+| Bod kontraktu | Kód | Verdikt |
 |---|---|---|
-| `fve` = ne / nevím / chybí | consult | null |
-| `fve` = ano, `baterieKwh` = 0 / null | start | null |
-| `fve` = ano, `baterieKwh` > 0, `rozsah` = full | full | odhad kvízu zaokr. na 10 Kč, `orientacni` |
-| `fve` = ano, `baterieKwh` > 0, jiný rozsah | opt | dtto |
+| fve=ne → null, consult | `result()`: `!hasFve` → consult, `amount: null` | SKIP |
+| fve=ano, baterie 0 → null, start | `!hasBat` → start, `amount: null` | SKIP |
+| fve=ano, baterie>0 → Kč na 10, opt/full podle rozsahu | `Math.round(x/12/10)*10`, `scope==='full' ? 'full' : 'opt'` | SKIP |
+| „Nevím“ u FVE bez 8 kWp v částce | `unknown` → consult bez Kč; `kwp='8'` se jen předvyplní do odpovědí | SKIP (generátor kwp zahodí) |
+| rozsah vstupuje do odhadu | opt = + bojler + TČ, full = + EV (`ABSORB_*`) | SKIP |
+| 20 Kč bez baterie | odstraněno v K1 (2026-09-29) | SKIP |
+| badge „orientační“ | `badge-orient` vždy | SKIP |
+| tarif „Nevím“ | `estimate` ho bere jako spot → přičte spotovou arbitráž baterie | **otázka** — kontrakt to neřeší; generátor částku nechá a hlásí `odhad_tarif_nevim` |
 
-- Kč u consult/start (např. 20 Kč bez baterie) → zahozeno, `audit: odhad_zahozen`.
-- `kwp` při FVE „nevím“ → zahozeno (`kwp_bez_fve`) — ochrana proti tichému defaultu 8 kWp.
-- Generátor Kč nepočítá, jen přebírá odhad kvízu tam, kde to kontrakt dovoluje.
+## Ostatní cesty (mimo zadání, jen zjištění)
 
-## Čeká na kód `JeanQuiz.estimate` a tělo requestu
+- `PilotModal` (`pilot_modal`) a `PilotPage` (`pilot_page`) jdou na listinu **bez** odpovědí kvízu —
+  generátor je ohlásí jako díru `answers`.
+- Na Formspree `xeereava` dál jdou: foto faktury, `Questionnaire` (/pro-domacnosti, `calculateOffer`),
+  `SegmentWizard` (/wizard) a `ContactForm`. Do `dbo.Leads` se nedostanou.
+- Jestli server přihlášku bez `answers` uloží, nebo ji zahodí, je v `LeadIntake` na MCP — neověřeno.
 
-| Kontrola | Stav |
-|---|---|
-| Klíče těla requestu = `DetailsJson` výše (všechna 3 volání) | neověřeno |
-| `quiz` (q1–q6) v requestu | neověřeno |
-| bez FVE → null / consult | neověřeno |
-| baterie 0 → null / start | neověřeno |
-| „nevím“ nedosadí 8 kWp | neověřeno |
-| rozsah (bojler, tc, ev) vstupuje do odhadu | neověřeno — generátor to z dat nepozná |
-| zaokrouhlení na 10 Kč, badge „orientační“ | neověřeno |
-| `PLAN_COPY` (bez něj `co_chce` = null) | chybí |
-
-Fixtures jsou sestavené z kontraktu (`_pozn` v každém souboru), ne ze stagingu.
-`dbo.Leads` je prázdná a testovací lead se neposílá.
+Fixtures mají tvar těla `Landing.submit`; hodnoty jsou testovací (`_pozn` v každém souboru).
+`dbo.Leads` je prázdná a testovací lead se neposílá. `PLAN_COPY` je v `fvesmart-app.js`;
+generátor ho bere přes `--plan-copy` (bez něj `co_chce` = null).
 
 ## Kritičnost mezer
 
@@ -80,4 +79,4 @@ Fixtures jsou sestavené z kontraktu (`_pozn` v každém souboru), ne ze staging
 - `muze_pockat`: kraj, obec, rozsah, střídač, EAN, IČ, co_chce
 
 Ukázka pro akceptační případ bez FVE a bez baterie: `ukazka_bez_fve.json`
-(`odhad_kc_mes: null`, plán `start` → `consult`, 20 Kč zahozeno).
+(`--plan-copy plan_copy.json`; `odhad_kc_mes: null`, plán `start` → `consult`, 20 Kč zahozeno).

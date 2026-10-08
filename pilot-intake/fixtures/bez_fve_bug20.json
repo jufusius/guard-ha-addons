@@ -1,9 +1,9 @@
 {
- "_pozn": "Bug: bez FVE kvíz poslal start + 20 Kč. Sestaveno z kontraktu, ne ze stagingu.",
+ "_pozn": "Simulace starého bugu: bez FVE start + 20 Kč. Tvar = tělo Landing.submit (fvesmart-app.js); uložení do DetailsJson neověřeno.",
  "Name": "Test Pilot",
  "Email": "test@example.com",
  "Phone": null,
- "Source": "pilot",
- "Page": "/#uspora",
- "DetailsJson": "{\"plan\": \"start\", \"odhadKcMes\": 20, \"fve\": \"ne\", \"kwp\": null, \"baterieKwh\": null, \"tarif\": \"vtnt\", \"rozsah\": \"bojler\", \"kraj\": null, \"quiz\": {\"q1\": \"x\", \"q2\": \"x\", \"q3\": \"x\", \"q4\": \"x\", \"q5\": \"x\", \"q6\": \"x\"}}"
+ "Source": "landing",
+ "Page": "/",
+ "DetailsJson": "{\"source\": \"landing\", \"plan\": \"start\", \"estimate\": \"20\", \"municipality\": \"Brno\", \"hasFve\": \"no\", \"answers\": \"{\\\"fve\\\": \\\"no\\\", \\\"kwp\\\": \\\"8\\\", \\\"bat\\\": \\\"0\\\", \\\"tarif\\\": \\\"fix\\\", \\\"scope\\\": \\\"opt\\\", \\\"kraj\\\": \\\"Jihomoravský\\\"}\"}"
 }

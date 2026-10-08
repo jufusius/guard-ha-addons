@@ -1,0 +1,7 @@
+{
+ "_pozn": "Doslovně z PLAN_COPY v fvesmart-app.js (2026-09-29, K2). Při změně textů na webu přepsat.",
+ "start": ["Vyfotíte fakturu, Jean ji rozebere", "Uvidíte, kolik platíte zbytečně", "Odhad úspory bez instalace čehokoliv"],
+ "opt": ["Baterie nabíjí levně, prodává ve špičce", "Bojler a čerpadlo podle spotových cen", "Úspora v korunách každý den v appce"],
+ "full": ["FVE, baterie, čerpadlo i EV nabíječka", "Guard navrhne, vy schválíte, co smí", "Ranní a večerní přehled, co se v domě stalo"],
+ "consult": ["Spočítáme, co se vám vyplatí, ještě než panely koupíte", "Vyfotíte fakturu, Jean ji rozebere", "Odhad je zdarma a nezávazný"]
+}

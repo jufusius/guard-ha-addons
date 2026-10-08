@@ -13,24 +13,33 @@ import json
 import sys
 
 FVE = {"ano", "ne", "nevim"}
-TARIF = {"spot", "vtnt", "nevim"}
-ROZSAH = {"start", "bojler", "tc", "ev", "full"}
+TARIF = {"spot", "vtnt", "fix", "nevim"}
+ROZSAH = {"start", "bojler", "tc", "ev", "opt", "full"}
 PLANS = {"start", "opt", "full", "consult"}
 
-# Interní pole -> klíč v DetailsJson. Jediné místo, kde se opravuje název klíče,
-# až bude k dispozici tělo requestu z fvesmart-app.js (opravuje se generátor, ne web).
-DETAILS_KEYS = {
+# Interní pole -> klíč v DetailsJson. Klíče = tělo requestu Landing.submit
+# (fvesmart-app.js, source 'landing'); při nesouladu se opravuje generátor, ne web.
+BODY_KEYS = {
     "plan": "plan",
-    "odhad_kc_mes": "odhadKcMes",
-    "fve": "fve",
-    "kwp": "kwp",
-    "baterie_kwh": "baterieKwh",
-    "tarif": "tarif",
-    "rozsah": "rozsah",
-    "kraj": "kraj",
+    "odhad_kc_mes": "estimate",   # string Kč/měs, posílá se jen když plán sedí na výsledek kvízu
+    "obec": "municipality",
+    "has_fve": "hasFve",          # rádio ve formuláři: yes | no
 }
-QUIZ_KEY = "quiz"
-QUIZ_QUESTIONS = ["q1", "q2", "q3", "q4", "q5", "q6"]
+# answers = JSON string JeanQuiz.answers (6 odpovědí kvízu).
+ANSWERS_KEY = "answers"
+ANSWER_KEYS = {
+    "fve": "fve",            # yes | no | unknown
+    "kwp": "kwp",            # 3 | 5 | 8 | 12 (= „10+“)
+    "baterie_kwh": "bat",    # 0 | 8 (= do 10 kWh) | 14 (= 10 kWh a víc)
+    "tarif": "tarif",        # spot | fix | unknown
+    "rozsah": "scope",       # start | opt | full
+    "kraj": "kraj",          # název kraje, ne kód
+}
+VALUE_MAP = {
+    "fve": {"yes": "ano", "no": "ne", "unknown": "nevim"},
+    "has_fve": {"yes": "ano", "no": "ne"},
+    "tarif": {"unknown": "nevim"},
+}
 
 # Údaje, které kvíz nezjišťuje vůbec — vždy se doplňují hovorem.
 ALWAYS_OPEN = ["faktura", "stridac", "ean", "vt_nt_casy", "ic"]
@@ -100,21 +109,38 @@ def from_lead_row(row):
         details = {}
 
     payload = {"jmeno": row.get("Name"),
-               "kontakt": row.get("Phone") or row.get("Email"),
-               "obec": details.get("obec")}
+               "kontakt": row.get("Phone") or row.get("Email")}
     missing = []
-    for field, key in DETAILS_KEYS.items():
+    for field, key in BODY_KEYS.items():
         if key in details:
             payload[field] = details[key]
-        else:
-            missing.append(key)
+    if "plan" not in details:
+        missing.append("plan")
 
-    quiz = details.get(QUIZ_KEY)
-    if not isinstance(quiz, dict):
-        missing.append(QUIZ_KEY)
+    answers = details.get(ANSWERS_KEY)
+    if isinstance(answers, str):
+        try:
+            answers = json.loads(answers) if answers.strip() else None
+        except ValueError:
+            answers = None
+    if not isinstance(answers, dict):
+        missing.append(ANSWERS_KEY)
     else:
-        missing += [f"{QUIZ_KEY}.{q}" for q in QUIZ_QUESTIONS
-                    if not _str(quiz.get(q))]
+        for field, key in ANSWER_KEYS.items():
+            if _str(answers.get(key)) is not None:
+                payload[field] = answers[key]
+            else:
+                missing.append(f"{ANSWERS_KEY}.{key}")
+
+    for field, mapping in VALUE_MAP.items():
+        if field in payload and str(payload[field]) in mapping:
+            payload[field] = mapping[str(payload[field])]
+    # FVE z kvízu má přednost; rádio z formuláře jen když kvíz chybí.
+    has_fve = payload.pop("has_fve", None)
+    if "fve" not in payload and has_fve is not None:
+        payload["fve"] = has_fve
+    elif has_fve is not None and has_fve != payload.get("fve"):
+        audit.append({"typ": "fve_rozpor", "kviz": payload.get("fve"), "formular": has_fve})
     if missing:
         audit.append({"typ": "chybi_hidden_pole", "pole": missing})
     return payload, audit
@@ -157,6 +183,10 @@ def build_form(row, plan_copy=None):
         else:
             why = f"Kč u plánu {plan} (bez baterie / bez FVE) je chyba, ne fakt"
         audit.append({"typ": "odhad_zahozen", "payload_kc": sent_kc, "duvod": why})
+
+    if kc is not None and tarif == "nevim":
+        audit.append({"typ": "odhad_tarif_nevim",
+                      "detail": "Landing.estimate bere tarif 'Nevím' jako spot a přičítá spotovou arbitráž baterie"})
 
     copy = (plan_copy or {}).get(plan)
     co_chce = None
@@ -216,6 +246,7 @@ ZÁKAZNÍK
 
 PRAVIDLA
 - Kč říkej jen když odhad_kc_mes není null, a vždy jako „orientačně“. Jinak: „částku spočítáme z faktury“.
+- kwp a baterie_kwh jsou pásma z kvízu, ne změřené hodnoty (kwp 12 = „10+“, baterie 8 = „do 10 kWh“, 14 = „10 kWh a víc“). Přesnou hodnotu zjisti v hovoru.
 - Plán neměň. consult ≠ Start s baterií.
 - Neslibuj úsporu, kterou kvíz nepočítal.
 - První krok: zavolat do 24 h, doplnit otevřené položky, vyfotit fakturu.

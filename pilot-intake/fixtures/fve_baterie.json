@@ -1,9 +1,9 @@
 {
- "_pozn": "FVE + baterie; chybí klíč kraj a quiz.q6. Sestaveno z kontraktu, ne ze stagingu.",
+ "_pozn": "FVE + baterie, plán opt, odhad z kvízu. Tvar = tělo Landing.submit (fvesmart-app.js); uložení do DetailsJson neověřeno.",
  "Name": "Test Pilot",
  "Email": "test@example.com",
  "Phone": null,
- "Source": "pilot",
- "Page": "/#uspora",
- "DetailsJson": "{\"plan\": \"opt\", \"odhadKcMes\": 487, \"fve\": \"ano\", \"kwp\": 9.8, \"baterieKwh\": 10.2, \"tarif\": \"spot\", \"rozsah\": \"ev\", \"quiz\": {\"q1\": \"x\", \"q2\": \"x\", \"q3\": \"x\", \"q4\": \"x\", \"q5\": \"x\", \"q6\": \"\"}}"
+ "Source": "landing",
+ "Page": "/",
+ "DetailsJson": "{\"source\": \"landing\", \"plan\": \"opt\", \"estimate\": \"487\", \"municipality\": \"Tábor\", \"hasFve\": \"yes\", \"answers\": \"{\\\"fve\\\": \\\"yes\\\", \\\"kwp\\\": \\\"12\\\", \\\"bat\\\": \\\"14\\\", \\\"tarif\\\": \\\"spot\\\", \\\"scope\\\": \\\"opt\\\", \\\"kraj\\\": \\\"Jihočeský\\\"}\"}"
 }
