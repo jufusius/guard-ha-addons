@@ -71,6 +71,21 @@ def _str(v):
     return s or None
 
 
+def from_lead_row(row):
+    """Řádek dbo.Leads -> plochý payload. Odpovědi kvízu jsou jen v DetailsJson.
+
+    Klíče uvnitř DetailsJson zatím nejsou ověřené proti fvesmart-app.js;
+    co v nich chybí, zachytí audit jako chybi_hidden_pole.
+    """
+    details = row.get("DetailsJson") or {}
+    if isinstance(details, str):
+        details = json.loads(details) if details.strip() else {}
+    payload = dict(details)
+    payload["jmeno"] = row.get("Name")
+    payload["kontakt"] = row.get("Phone") or row.get("Email")
+    return payload
+
+
 def contract_plan(fve, baterie_kwh, rozsah):
     """Plán podle kontraktu. Rozsah 'full' -> full, jinak opt (jen s baterií)."""
     if fve != "ano":
@@ -200,6 +215,8 @@ def main():
     args = ap.parse_args()
     with open(args.payload, encoding="utf-8") as f:
         payload = json.load(f)
+    if "DetailsJson" in payload:
+        payload = from_lead_row(payload)
     plan_copy = None
     if args.plan_copy:
         with open(args.plan_copy, encoding="utf-8") as f:

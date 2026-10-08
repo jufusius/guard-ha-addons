@@ -19,6 +19,13 @@ Kód kvízu ani reálný payload nebyly k dispozici:
 - `JeanQuiz` není v `guard-ha-addons` ani `jufHome` (repo portálu/webu není připojené),
 - v Gmailu není žádný Formspree submission z #pilot.
 
+**Upřesnění (2026-10-08):** Kvíz je na FveSmart, v sekci `#uspora` (markup `Content__LandingPage.liquid:98`, logika `fvesmart-app.js`).
+Pilot i kvíz posílají JSON na `POST https://mcp.jufusi.us/api/public/leads` (`fvesmart-app.js:1737`), data se ukládají do `dbo.Leads`.
+Ověřené schéma: sloupce `Name` (povinné), `Email`, `Phone`, `Source`, `Page`, `DetailsJson` a pak souhlasy a stav.
+Pro obec, plán, odhad ani 6 odpovědí kvízu **nejsou sloupce**. Server je tedy uloží jen tehdy, když je klient pošle v `DetailsJson`.
+Tabulka má 0 řádků. `intake.py` přijme i řádek `dbo.Leads` (rozbalí `DetailsJson`).
+Foto faktury jde přes Formspree (`xeereava`) a s leadem není svázané. Hovor proto musí fakturu spárovat ručně.
+
 Fixtures jsou proto **sestavené z kontraktu**, ne ze stagingu (`_pozn` v každém souboru).
 Názvy polí v payloadu (`fve`, `kwp`, `baterie_kwh`, `tarif`, `rozsah`, `kraj`,
 `plan`, `odhad_kc_mes`, `jmeno`, `kontakt`, `obec`) jsou navržené — před nasazením

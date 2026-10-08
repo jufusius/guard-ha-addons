@@ -2,7 +2,7 @@ import json
 import pathlib
 import unittest
 
-from intake import build_form, build_prompt
+from intake import build_form, build_prompt, from_lead_row
 
 FIX = pathlib.Path(__file__).parent / "fixtures"
 
@@ -64,6 +64,17 @@ class ContractTest(unittest.TestCase):
         prompt = build_prompt(form)
         self.assertIn('"odhad_kc_mes": null', prompt)
         self.assertIn("částku spočítáme z faktury", prompt)
+
+    def test_lead_row_bez_odpovedi_je_dira(self):
+        row = {"Name": "TEST", "Email": "t@example.com", "Phone": None,
+               "Source": "pilot", "DetailsJson": "{}"}
+        form, audit = build_form(from_lead_row(row))
+        self.assertEqual(form["identita"]["kontakt"], "t@example.com")
+        self.assertEqual(form["plan"], "consult")
+        self.assertIsNone(form["odhad_kc_mes"])
+        dira = next(a for a in audit if a["typ"] == "chybi_hidden_pole")
+        self.assertIn("fve", dira["pole"])
+        self.assertNotIn("jmeno", dira["pole"])
 
 
 if __name__ == "__main__":
