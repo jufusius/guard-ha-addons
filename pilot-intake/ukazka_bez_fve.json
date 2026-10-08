@@ -1,0 +1,67 @@
+{
+  "formular": {
+    "identita": {
+      "jmeno": "Test Pilot",
+      "kontakt": "test@example.com",
+      "obec": "Brno"
+    },
+    "fve": "ne",
+    "kwp": null,
+    "baterie_kwh": null,
+    "tarif": "vtnt",
+    "rozsah": "bojler",
+    "kraj": null,
+    "plan": "consult",
+    "odhad_kc_mes": null,
+    "duveryhodnost": "nelze_spocitat",
+    "co_chce": null,
+    "co_nechce": [
+      "instalace elektro",
+      "závazek",
+      "ceník (beta)"
+    ],
+    "otevrene": [
+      {
+        "pole": "kraj",
+        "kriticnost": "muze_pockat"
+      },
+      {
+        "pole": "co_chce",
+        "kriticnost": "muze_pockat"
+      },
+      {
+        "pole": "faktura",
+        "kriticnost": "blokuje_odhad"
+      },
+      {
+        "pole": "stridac",
+        "kriticnost": "muze_pockat"
+      },
+      {
+        "pole": "ean",
+        "kriticnost": "muze_pockat"
+      },
+      {
+        "pole": "vt_nt_casy",
+        "kriticnost": "blokuje_odhad"
+      },
+      {
+        "pole": "ic",
+        "kriticnost": "muze_pockat"
+      }
+    ]
+  },
+  "audit": [
+    {
+      "typ": "plan_rozpor",
+      "payload": "start",
+      "kontrakt": "consult"
+    },
+    {
+      "typ": "odhad_zahozen",
+      "payload_kc": 20.0,
+      "duvod": "Kč u plánu consult (bez baterie / bez FVE) je chyba, ne fakt"
+    }
+  ],
+  "prompt": "Jsi Guard agent pro přihlášku do pilotu. Máš jen tento záznam. Nic si nedomýšlej.\n\nZÁKAZNÍK\n{\n  \"identita\": {\n    \"jmeno\": \"Test Pilot\",\n    \"kontakt\": \"test@example.com\",\n    \"obec\": \"Brno\"\n  },\n  \"fve\": \"ne\",\n  \"kwp\": null,\n  \"baterie_kwh\": null,\n  \"tarif\": \"vtnt\",\n  \"rozsah\": \"bojler\",\n  \"kraj\": null,\n  \"plan\": \"consult\",\n  \"odhad_kc_mes\": null,\n  \"duveryhodnost\": \"nelze_spocitat\",\n  \"co_chce\": null,\n  \"co_nechce\": [\n    \"instalace elektro\",\n    \"závazek\",\n    \"ceník (beta)\"\n  ],\n  \"otevrene\": [\n    {\n      \"pole\": \"kraj\",\n      \"kriticnost\": \"muze_pockat\"\n    },\n    {\n      \"pole\": \"co_chce\",\n      \"kriticnost\": \"muze_pockat\"\n    },\n    {\n      \"pole\": \"faktura\",\n      \"kriticnost\": \"blokuje_odhad\"\n    },\n    {\n      \"pole\": \"stridac\",\n      \"kriticnost\": \"muze_pockat\"\n    },\n    {\n      \"pole\": \"ean\",\n      \"kriticnost\": \"muze_pockat\"\n    },\n    {\n      \"pole\": \"vt_nt_casy\",\n      \"kriticnost\": \"blokuje_odhad\"\n    },\n    {\n      \"pole\": \"ic\",\n      \"kriticnost\": \"muze_pockat\"\n    }\n  ]\n}\n\nPRAVIDLA\n- Kč říkej jen když odhad_kc_mes není null, a vždy jako „orientačně“. Jinak: „částku spočítáme z faktury“.\n- Plán neměň. consult ≠ Start s baterií.\n- Neslibuj úsporu, kterou kvíz nepočítal.\n- První krok: zavolat do 24 h, doplnit otevřené položky, vyfotit fakturu.\n- Výstup: potvrzení plánu, seznam chybějících údajů, návrh dalšího kroku (konzultace / zapojení krabičky / nic).\n- Žádný zápis do zařízení, žádný export, žádná automatizace.\n\nCO NESMÍŠ\n- Ovládat dům ani měnit režim baterie.\n- Slíbit cenu pilotu.\n- Použít 0 Kč místo null.\n- Počítat arbitráž bez η a bez faktury.\n- Doplnit null pole odhadem — null zůstává null, dokud ho zákazník neřekne.\n\nKRITIČNOST MEZER\n- blokuje_hovor: bez toho nevoláš, eskaluj člověku.\n- blokuje_odhad: zeptej se v hovoru, bez toho žádné Kč.\n- muze_pockat: doplň, když na to přijde řeč."
+}

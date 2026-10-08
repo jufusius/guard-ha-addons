@@ -1,0 +1,4 @@
+{"_pozn": "Sestaveno z kontraktu. FVE 'nevím', kvíz přesto spočítal Kč (tichý default 8 kWp).",
+ "jmeno": "Test Pilot", "kontakt": "test@example.com", "obec": "Jihlava",
+ "fve": "nevim", "kwp": 8, "baterie_kwh": 10, "tarif": "nevim", "rozsah": "full",
+ "plan": "full", "odhad_kc_mes": 734}

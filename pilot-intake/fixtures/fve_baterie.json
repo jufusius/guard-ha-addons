@@ -1,0 +1,4 @@
+{"_pozn": "Sestaveno z kontraktu. Chybí kraj (hidden pole) — test detekce díry.",
+ "jmeno": "Test Pilot", "kontakt": "test@example.com", "obec": "Tábor",
+ "fve": "ano", "kwp": 9.8, "baterie_kwh": 10.2, "tarif": "spot", "rozsah": "ev",
+ "plan": "opt", "odhad_kc_mes": 487}
