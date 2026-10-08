@@ -1,4 +1,9 @@
-{"_pozn": "Sestaveno z kontraktu. FVE 'nevím', kvíz přesto spočítal Kč (tichý default 8 kWp).",
- "jmeno": "Test Pilot", "kontakt": "test@example.com", "obec": "Jihlava",
- "fve": "nevim", "kwp": 8, "baterie_kwh": 10, "tarif": "nevim", "rozsah": "full",
- "plan": "full", "odhad_kc_mes": 734}
+{
+ "_pozn": "FVE 'nevím', kvíz přesto spočítal Kč (tichý default 8 kWp). Sestaveno z kontraktu, ne ze stagingu.",
+ "Name": "Test Pilot",
+ "Email": "test@example.com",
+ "Phone": null,
+ "Source": "pilot",
+ "Page": "/#uspora",
+ "DetailsJson": "{\"plan\": \"full\", \"odhadKcMes\": 734, \"fve\": \"nevim\", \"kwp\": 8, \"baterieKwh\": 10, \"tarif\": \"nevim\", \"rozsah\": \"full\", \"kraj\": null, \"quiz\": {\"q1\": \"x\", \"q2\": \"x\", \"q3\": \"x\", \"q4\": \"x\", \"q5\": \"x\", \"q6\": \"x\"}}"
+}

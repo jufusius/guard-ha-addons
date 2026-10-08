@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Pilot intake: payload formuláře #pilot -> formulář zákazníka + prompt pro agenta.
+"""Pilot intake: řádek dbo.Leads (#pilot / kvíz) -> formulář zákazníka + prompt pro agenta.
 
-Formulář se plní jen z payloadu. Co v payloadu není, je null a jde do `otevrene`.
-Kč se přebírá z odhadu kvízu jen tam, kde to kontrakt dovoluje (FVE + baterie
-+ známé kWp); generátor sám nic nedopočítává. Rozpory payloadu s kontraktem se
-vrací v `audit`, výsledek se řídí kontraktem, ne payloadem.
+Formulář se plní jen z řádku a jeho DetailsJson. Co tam není, je null a jde do
+`otevrene`. Kč se přebírá z odhadu kvízu jen tam, kde to kontrakt dovoluje
+(FVE + baterie + známé kWp); generátor sám nic nedopočítává. Rozpory s
+kontraktem se vrací v `audit`, výsledek se řídí kontraktem, ne payloadem.
 
-Použití: python3 intake.py payload.json [--plan-copy plan_copy.json]
+Použití: python3 intake.py lead_row.json [--plan-copy plan_copy.json]
 """
 import argparse
 import json
@@ -17,15 +17,26 @@ TARIF = {"spot", "vtnt", "nevim"}
 ROZSAH = {"start", "bojler", "tc", "ev", "full"}
 PLANS = {"start", "opt", "full", "consult"}
 
-# Pole, která má payload nést (hidden pole + 6 odpovědí kvízu).
-PAYLOAD_FIELDS = {
-    "identita": ["jmeno", "kontakt", "obec"],
-    "vysledek": ["plan", "odhad_kc_mes"],
-    "odpovedi": ["fve", "kwp", "baterie_kwh", "tarif", "rozsah", "kraj"],
+# Interní pole -> klíč v DetailsJson. Jediné místo, kde se opravuje název klíče,
+# až bude k dispozici tělo requestu z fvesmart-app.js (opravuje se generátor, ne web).
+DETAILS_KEYS = {
+    "plan": "plan",
+    "odhad_kc_mes": "odhadKcMes",
+    "fve": "fve",
+    "kwp": "kwp",
+    "baterie_kwh": "baterieKwh",
+    "tarif": "tarif",
+    "rozsah": "rozsah",
+    "kraj": "kraj",
 }
+QUIZ_KEY = "quiz"
+QUIZ_QUESTIONS = ["q1", "q2", "q3", "q4", "q5", "q6"]
 
 # Údaje, které kvíz nezjišťuje vůbec — vždy se doplňují hovorem.
 ALWAYS_OPEN = ["faktura", "stridac", "ean", "vt_nt_casy", "ic"]
+
+# Foto faktury chodí přes Formspree mimo dbo.Leads a s leadem se nepáruje.
+OPEN_NOTES = {"faktura": "Formspree xeereava, nespárováno s leadem"}
 
 CRITICALITY = {
     "jmeno": "blokuje_hovor",
@@ -72,18 +83,41 @@ def _str(v):
 
 
 def from_lead_row(row):
-    """Řádek dbo.Leads -> plochý payload. Odpovědi kvízu jsou jen v DetailsJson.
+    """Řádek dbo.Leads -> (plochý payload s interními názvy, audit děr).
 
-    Klíče uvnitř DetailsJson zatím nejsou ověřené proti fvesmart-app.js;
-    co v nich chybí, zachytí audit jako chybi_hidden_pole.
+    Klíč, který v DetailsJson chybí, v payloadu není vůbec (ne null) a audit ho
+    vypíše pod jeho názvem v DetailsJson.
     """
-    details = row.get("DetailsJson") or {}
+    audit = []
+    details = row.get("DetailsJson")
     if isinstance(details, str):
-        details = json.loads(details) if details.strip() else {}
-    payload = dict(details)
-    payload["jmeno"] = row.get("Name")
-    payload["kontakt"] = row.get("Phone") or row.get("Email")
-    return payload
+        try:
+            details = json.loads(details) if details.strip() else {}
+        except ValueError:
+            audit.append({"typ": "details_json_neplatny"})
+            details = {}
+    if not isinstance(details, dict):
+        details = {}
+
+    payload = {"jmeno": row.get("Name"),
+               "kontakt": row.get("Phone") or row.get("Email"),
+               "obec": details.get("obec")}
+    missing = []
+    for field, key in DETAILS_KEYS.items():
+        if key in details:
+            payload[field] = details[key]
+        else:
+            missing.append(key)
+
+    quiz = details.get(QUIZ_KEY)
+    if not isinstance(quiz, dict):
+        missing.append(QUIZ_KEY)
+    else:
+        missing += [f"{QUIZ_KEY}.{q}" for q in QUIZ_QUESTIONS
+                    if not _str(quiz.get(q))]
+    if missing:
+        audit.append({"typ": "chybi_hidden_pole", "pole": missing})
+    return payload, audit
 
 
 def contract_plan(fve, baterie_kwh, rozsah):
@@ -95,12 +129,8 @@ def contract_plan(fve, baterie_kwh, rozsah):
     return "full" if rozsah == "full" else "opt"
 
 
-def build_form(payload, plan_copy=None):
-    audit = []
-    missing_fields = [f for group in PAYLOAD_FIELDS.values() for f in group
-                      if f not in payload]
-    if missing_fields:
-        audit.append({"typ": "chybi_hidden_pole", "pole": missing_fields})
+def build_form(row, plan_copy=None):
+    payload, audit = from_lead_row(row)
 
     fve = _enum(payload.get("fve"), FVE)
     kwp = _num(payload.get("kwp"))
@@ -172,7 +202,8 @@ def build_form(payload, plan_copy=None):
         open_items.append("fve")
     open_items += ALWAYS_OPEN
     form["otevrene"] = [
-        {"pole": k, "kriticnost": CRITICALITY.get(k, "muze_pockat")}
+        {"pole": k, "kriticnost": CRITICALITY.get(k, "muze_pockat"),
+         **({"pozn": OPEN_NOTES[k]} if k in OPEN_NOTES else {})}
         for k in dict.fromkeys(open_items)
     ]
     return form, audit
@@ -214,14 +245,12 @@ def main():
     ap.add_argument("--plan-copy")
     args = ap.parse_args()
     with open(args.payload, encoding="utf-8") as f:
-        payload = json.load(f)
-    if "DetailsJson" in payload:
-        payload = from_lead_row(payload)
+        row = json.load(f)
     plan_copy = None
     if args.plan_copy:
         with open(args.plan_copy, encoding="utf-8") as f:
             plan_copy = json.load(f)
-    form, audit = build_form(payload, plan_copy)
+    form, audit = build_form(row, plan_copy)
     json.dump({"formular": form, "audit": audit, "prompt": build_prompt(form)},
               sys.stdout, ensure_ascii=False, indent=2)
     print()

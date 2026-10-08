@@ -1,4 +1,9 @@
-{"_pozn": "Sestaveno z kontraktu. Chybí kraj (hidden pole) — test detekce díry.",
- "jmeno": "Test Pilot", "kontakt": "test@example.com", "obec": "Tábor",
- "fve": "ano", "kwp": 9.8, "baterie_kwh": 10.2, "tarif": "spot", "rozsah": "ev",
- "plan": "opt", "odhad_kc_mes": 487}
+{
+ "_pozn": "FVE + baterie; chybí klíč kraj a quiz.q6. Sestaveno z kontraktu, ne ze stagingu.",
+ "Name": "Test Pilot",
+ "Email": "test@example.com",
+ "Phone": null,
+ "Source": "pilot",
+ "Page": "/#uspora",
+ "DetailsJson": "{\"plan\": \"opt\", \"odhadKcMes\": 487, \"fve\": \"ano\", \"kwp\": 9.8, \"baterieKwh\": 10.2, \"tarif\": \"spot\", \"rozsah\": \"ev\", \"quiz\": {\"q1\": \"x\", \"q2\": \"x\", \"q3\": \"x\", \"q4\": \"x\", \"q5\": \"x\", \"q6\": \"\"}}"
+}
