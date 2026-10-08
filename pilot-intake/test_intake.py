@@ -94,11 +94,26 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(form["fve"], "ano")
         self.assertIn("fve_rozpor", {a["typ"] for a in audit})
 
-    def test_tarif_nevim_s_odhadem_je_v_auditu(self):
-        form, audit = build_form(with_details("fve_baterie.json", ans={"tarif": "unknown"}))
+    def test_tarif_nevim_jen_zaklad_bez_arbitraze(self):
+        # 12 kWp / 14 kWh / opt / Jihočeský: web s arbitráží 850, základ (= web při tarifu fix) 640
+        form, audit = build_form(with_details("fve_baterie.json", estimate="850", ans={"tarif": "unknown"}))
         self.assertEqual(form["tarif"], "nevim")
-        self.assertEqual(form["odhad_kc_mes"], 490)
+        self.assertEqual(form["odhad_kc_mes"], 640)
+        self.assertEqual(form["duveryhodnost"], "orientacni")
+        nevim = next(a for a in audit if a["typ"] == "odhad_tarif_nevim")
+        self.assertEqual((nevim["payload_kc"], nevim["zaklad_kc"]), (850, 640))
+
+    def test_tarif_nevim_bez_vstupu_null(self):
+        form, audit = build_form(with_details("fve_baterie.json", estimate="850",
+                                              ans={"tarif": "unknown", "kraj": ...}))
+        self.assertIsNone(form["odhad_kc_mes"])
+        self.assertEqual(form["duveryhodnost"], "nelze_spocitat")
         self.assertIn("odhad_tarif_nevim", {a["typ"] for a in audit})
+
+    def test_tarif_spot_bere_odhad_webu(self):
+        form, audit = build_form(load("fve_baterie.json"))
+        self.assertEqual(form["odhad_kc_mes"], 490)
+        self.assertNotIn("odhad_tarif_nevim", {a["typ"] for a in audit})
 
     def test_tarif_fix_neni_vtnt(self):
         form, _ = build_form(load("bez_fve_bug20.json"))
@@ -143,6 +158,7 @@ class ContractTest(unittest.TestCase):
         prompt = build_prompt(form)
         self.assertIn('"odhad_kc_mes": null', prompt)
         self.assertIn("pásma z kvízu", prompt)
+        self.assertIn("„máte 14 kWh“", prompt)
         self.assertIn("částku spočítáme z faktury", prompt)
 
 

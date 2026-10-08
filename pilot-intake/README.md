@@ -38,7 +38,7 @@ Přihláška z landingu (`source: "landing"`) posílá:
   bez shody plánu s výsledkem kvízu chybí `estimate`.
 - `answers` je JSON **string**, ne objekt. Generátor ho rozbalí.
 - `kwp` a `bat` jsou pásma (12 = „10+“, 8 = „do 10 kWh“, 14 = „10 kWh a víc“), ne změřené hodnoty.
-  Prompt to agentovi říká.
+  Prompt agentovi zakazuje říct číslo jako fakt („máte 14 kWh“).
 - `kraj` je název kraje, ne kód. `tarif: fix` je fixní tarif, ne VT/NT — generátor ho nepřejmenovává.
 - FVE: má přednost `answers.fve`; rádio `hasFve` jen když kvíz chybí, při rozporu `audit: fve_rozpor`.
 - Generátor předpokládá, že server uloží klíče těla do `DetailsJson` pod stejnými názvy.
@@ -58,7 +58,7 @@ Díra = chybí `plan`, `answers` nebo některá ze 6 odpovědí (`answers.kraj` 
 | rozsah vstupuje do odhadu | opt = + bojler + TČ, full = + EV (`ABSORB_*`) | SKIP |
 | 20 Kč bez baterie | odstraněno v K1 (2026-09-29) | SKIP |
 | badge „orientační“ | `badge-orient` vždy | SKIP |
-| tarif „Nevím“ | `estimate` ho bere jako spot → přičte spotovou arbitráž baterie | **otázka** — kontrakt to neřeší; generátor částku nechá a hlásí `odhad_tarif_nevim` |
+| tarif „Nevím“ | `estimate` ho bere jako spot → přičte spotovou arbitráž baterie | web SKIP; generátor bere jen základ bez arbitráže (`base_estimate`, zrcadlo `Landing.estimate`, ověřeno na 336 kombinacích), audit `odhad_tarif_nevim`; bez kWp/baterie/rozsahu/kraje → null |
 
 ## Ostatní cesty (mimo zadání, jen zjištění)
 

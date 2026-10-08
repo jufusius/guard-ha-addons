@@ -10,6 +10,7 @@ Použití: python3 intake.py lead_row.json [--plan-copy plan_copy.json]
 """
 import argparse
 import json
+import math
 import sys
 
 FVE = {"ano", "ne", "nevim"}
@@ -40,6 +41,46 @@ VALUE_MAP = {
     "has_fve": {"yes": "ano", "no": "ne"},
     "tarif": {"unknown": "nevim"},
 }
+
+# Zrcadlo Landing.estimate (fvesmart-app.js): konstanty FVE_CALC a KRAJ_FACTOR.
+# Používá se jen pro tarif „Nevím“: základ bez spotové arbitráže (web ji tam přičítá).
+FVE_CALC = {
+    "YIELD_KWH_PER_KWP": 1000, "SELF_USE_BASE": 0.30, "SELF_USE_BATTERY": 0.20,
+    "SELF_USE_MAX": 0.75, "ABSORB_BOILER_KWH": 1200, "ABSORB_HEATPUMP_KWH": 2000,
+    "ABSORB_WALLBOX_KWH": 1500, "BATTERY_SURPLUS_CYCLES": 200, "BATTERY_EFFICIENCY": 0.90,
+    "CAPTURE_FACTOR": 0.65, "SELF_USE_VALUE_CZK": 2.0, "BEHAVIORAL_SHIFT_RATIO": 0.05,
+    "DEFAULT_CONSUMPTION_KWH": 4000, "DEFAULT_RETAIL_CZK": 6.8, "DEFAULT_FEEDIN_CZK": 0.5,
+}
+KRAJ_FACTOR = {
+    "Jihomoravský": 1.05, "Zlínský": 1.03, "Jihočeský": 1.03, "Olomoucký": 1.0,
+    "Vysočina": 1.0, "Praha": 1.0, "Středočeský": 1.0, "Pardubický": 0.99,
+    "Královéhradecký": 0.99, "Plzeňský": 0.99, "Moravskoslezský": 0.97,
+    "Karlovarský": 0.96, "Ústecký": 0.96, "Liberecký": 0.95,
+}
+
+
+def base_estimate(kwp, bat, scope, kraj):
+    """Landing.estimate bez spotové arbitráže [Kč/měs, na 10]. Bez vstupu -> None, žádný default."""
+    if kwp is None or bat is None or scope is None or kraj is None:
+        return None
+    c = FVE_CALC
+    spread = min(c["DEFAULT_RETAIL_CZK"] - c["DEFAULT_FEEDIN_CZK"], c["SELF_USE_VALUE_CZK"])
+    consumption = c["DEFAULT_CONSUMPTION_KWH"]
+    production = kwp * c["YIELD_KWH_PER_KWP"] * KRAJ_FACTOR.get(kraj, 1.0)
+    sc_ratio = min(c["SELF_USE_BASE"] + c["SELF_USE_BATTERY"], c["SELF_USE_MAX"])
+    export_now = max(0, production - min(production * sc_ratio, consumption))
+    absorb = bat * c["BATTERY_SURPLUS_CYCLES"] * c["BATTERY_EFFICIENCY"]
+    if scope in ("opt", "full"):
+        absorb += c["ABSORB_BOILER_KWH"] + c["ABSORB_HEATPUMP_KWH"]
+    if scope == "full":
+        absorb += c["ABSORB_WALLBOX_KWH"]
+    redirect = min(export_now, absorb) * c["CAPTURE_FACTOR"]
+    behavioral = (min(max(0, export_now - redirect), consumption * c["BEHAVIORAL_SHIFT_RATIO"])
+                  * c["CAPTURE_FACTOR"] * spread)
+    # JS Math.round = floor(x + 0.5)
+    kc = math.floor((redirect * spread + behavioral) / 12 / 10 + 0.5) * 10
+    return kc if kc > 0 else None
+
 
 # Údaje, které kvíz nezjišťuje vůbec — vždy se doplňují hovorem.
 ALWAYS_OPEN = ["faktura", "stridac", "ean", "vt_nt_casy", "ic"]
@@ -176,17 +217,18 @@ def build_form(row, plan_copy=None):
     sent_kc = _num(payload.get("odhad_kc_mes"))
     kc = None
     if plan in ("opt", "full") and kwp is not None and sent_kc is not None:
-        kc = int(round(sent_kc / 10.0)) * 10
+        if tarif == "nevim":
+            kc = base_estimate(kwp, baterie, rozsah, _str(payload.get("kraj")))
+            audit.append({"typ": "odhad_tarif_nevim", "payload_kc": sent_kc, "zaklad_kc": kc,
+                          "detail": "web přičetl spotovou arbitráž; bere se jen základ bez ní"})
+        else:
+            kc = int(round(sent_kc / 10.0)) * 10
     elif sent_kc is not None:
         if plan in ("opt", "full") and kwp is None:
             why = "FVE 'nevím'/bez kWp — podezření na tichý default 8 kWp"
         else:
             why = f"Kč u plánu {plan} (bez baterie / bez FVE) je chyba, ne fakt"
         audit.append({"typ": "odhad_zahozen", "payload_kc": sent_kc, "duvod": why})
-
-    if kc is not None and tarif == "nevim":
-        audit.append({"typ": "odhad_tarif_nevim",
-                      "detail": "Landing.estimate bere tarif 'Nevím' jako spot a přičítá spotovou arbitráž baterie"})
 
     copy = (plan_copy or {}).get(plan)
     co_chce = None
@@ -246,7 +288,7 @@ ZÁKAZNÍK
 
 PRAVIDLA
 - Kč říkej jen když odhad_kc_mes není null, a vždy jako „orientačně“. Jinak: „částku spočítáme z faktury“.
-- kwp a baterie_kwh jsou pásma z kvízu, ne změřené hodnoty (kwp 12 = „10+“, baterie 8 = „do 10 kWh“, 14 = „10 kWh a víc“). Přesnou hodnotu zjisti v hovoru.
+- kwp a baterie_kwh jsou pásma z kvízu, ne změřené hodnoty: kwp 12 = „10 kWp a víc“, baterie 8 = „do 10 kWh“, baterie 14 = „10 kWh a víc“. Nikdy neříkej číslo jako fakt („máte 14 kWh“, „máte 12 kWp“); mluv v pásmu a přesnou hodnotu zjisti v hovoru.
 - Plán neměň. consult ≠ Start s baterií.
 - Neslibuj úsporu, kterou kvíz nepočítal.
 - První krok: zavolat do 24 h, doplnit otevřené položky, vyfotit fakturu.
