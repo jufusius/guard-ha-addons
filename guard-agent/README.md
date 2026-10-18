@@ -1,6 +1,6 @@
 # Guard Agent
 
-[![Verze](https://img.shields.io/badge/version-1.9.0-blue.svg)](CHANGELOG.md)
+[![Verze](https://img.shields.io/badge/version-1.9.1-blue.svg)](CHANGELOG.md)
 [![Architektury](https://img.shields.io/badge/arch-amd64%20%7C%20aarch64%20%7C%20armv7%20%7C%20armhf%20%7C%20i386-green.svg)](#)
 [![Licence](https://img.shields.io/badge/license-MIT-lightgrey.svg)](#)
 

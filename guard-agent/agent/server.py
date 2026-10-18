@@ -43,7 +43,7 @@ TUYA_SCAN = os.environ.get("GUARD_TUYA_SCAN", "true").lower() == "true"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 SUPERVISOR_URL = "http://supervisor"
 HA_CONFIG_DIR = "/homeassistant"
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 ENROLL_SENTINEL = "/data/enrolled.json"
 
 #CC- v2 API: key in header instead of URL path (prevents key leaking into logs)
@@ -371,7 +371,7 @@ def _resolve_grid_from_balance(telemetry):
     load = telemetry.get("house_consumption_w")
     batt = telemetry.get("battery_power_w")
     if pv is None or load is None or batt is None:
-        return  # keep mapped values as-is
+        return False  # keep mapped values as-is
 
     load_abs = abs(load)
     balance = load_abs - pv - batt
@@ -381,19 +381,42 @@ def _resolve_grid_from_balance(telemetry):
     else:
         telemetry["grid_import_w"] = 0.0
         telemetry["grid_export_w"] = round(-balance, 1)
+    return True
+
+
+# CC- 2026-10-18 (ANALYZA_cid6-poller-soc-95-spike_2026-10-15 §5): cid=6 briefing „Baterie teď 95 %" při 6,2 %.
+# CC-   Namapovaná RCT SoC entita byla 34 s unavailable, _match_entity spadl do pattern fallbacku `_state_of_charge`
+# CC-   a poslal `…minimum_state_of_charge_island` = 95. Namapovaná role teď vrací hodnotu své entity, nebo None
+# CC-   („nevím"); pattern fallback jen pro role, které server nenamapoval (onboarding před mapou). Každé pole
+# CC-   nese zdroj (`sources`), server hodnotu z jiné entity než mapa uloží jako null.
+TELEMETRY_FIELDS = (
+    "fve_production_w", "house_consumption_w", "grid_import_w", "grid_export_w",
+    "battery_soc_pct", "battery_power_w", "temperature",
+)
+DERIVED_BALANCE_SOURCE = "derived:balance"  # CC- grid dopočtený z bilance pv − load − baterie
+
+
+def _mapped_entity(field):
+    """Entity, kterou server namapoval na telemetrické pole (KeyEntities), jinak None."""
+    for ke_field, telem_field in KEY_ENTITY_FIELD_MAP.items():
+        if telem_field == field:
+            eid = KEY_ENTITIES.get(ke_field)
+            return eid or None
+    return None
 
 
 def _match_entity(field, states_dict, all_states=None):
-    """Find first matching entity for a telemetry field. Uses KEY_ENTITIES first, then pattern fallback."""
-    #CC- Priority 1: explicit mapping from server KeyEntitiesJson
-    for ke_field, telem_field in KEY_ENTITY_FIELD_MAP.items():
-        if telem_field == field and ke_field in KEY_ENTITIES:
-            eid = KEY_ENTITIES[ke_field]
-            if eid in states_dict and _is_numeric(states_dict[eid]):
-                log.debug("KeyEntity match: %s → %s = %s", field, eid, states_dict[eid])
-                return float(states_dict[eid])
+    """Vrátí (hodnota, zdroj_entity_id). Namapovaná role: jen její entita, jinak (None, None) — žádný fallback."""
+    mapped = _mapped_entity(field)
+    if mapped:
+        state = states_dict.get(mapped)
+        if state is not None and _is_numeric(state):
+            log.debug("KeyEntity match: %s → %s = %s", field, mapped, state)
+            return float(state), mapped
+        # CC- namapovaná entita je unavailable/unknown/chybí → nevím; cizí entita by poslala cizí veličinu
+        return None, None
 
-    #CC- Priority 2: pattern matching fallback
+    #CC- Pattern matching jen pro role bez mapy
     patterns = TELEMETRY_PATTERNS.get(field, [])
     excludes = TELEMETRY_EXCLUDE.get(field, [])
 
@@ -404,15 +427,52 @@ def _match_entity(field, states_dict, all_states=None):
             if eid.startswith("weather."):
                 temp = s.get("attributes", {}).get("temperature")
                 if temp is not None and _is_numeric(str(temp)):
-                    return float(temp)
+                    return float(temp), eid
 
     for eid, state in states_dict.items():
         if any(pattern in eid for pattern in patterns):
             if any(ex in eid for ex in excludes):
                 continue
             if _is_numeric(state):
-                return float(state)
-    return None
+                return float(state), eid
+    return None, None
+
+
+def _build_telemetry(states):
+    """JEDINÉ sestavení telemetrického payloadu z HA stavů — volá ho ruční push i telemetry_loop."""
+    states_lookup = {}
+    for s in states:
+        eid = s.get("entity_id", "")
+        state = s.get("state")
+        if state not in ("unavailable", "unknown"):
+            states_lookup[eid] = state
+
+    telemetry = {"timestamp": datetime.utcnow().isoformat() + "Z"}
+    sources = {}
+    for field in TELEMETRY_FIELDS:
+        value, src = _match_entity(field, states_lookup, states if field == "temperature" else None)
+        telemetry[field] = value
+        if value is not None and src:
+            sources[field] = src
+
+    #CC- House consumption must be unsigned (abs) before any balance calculation
+    load = telemetry.get("house_consumption_w")
+    if load is not None:
+        telemetry["house_consumption_w"] = abs(load)
+
+    #CC- Derive grid_import_w / grid_export_w from physics (pv - load - battery).
+    #CC- Overrides mapped sensors which may be: unsigned magnitude (homekit_homekit_grid),
+    #CC- daily cumulative kWh (homekit_sems_import/export), or plain missing.
+    if _resolve_grid_from_balance(telemetry):
+        sources["grid_import_w"] = DERIVED_BALANCE_SOURCE
+        sources["grid_export_w"] = DERIVED_BALANCE_SOURCE
+
+    telemetry["sources"] = sources
+    return telemetry
+
+
+def _telemetry_values(telemetry):
+    return {k: v for k, v in telemetry.items() if k not in ("timestamp", "sources") and v is not None}
 
 
 async def handle_telemetry_push(request):
@@ -425,35 +485,7 @@ async def handle_telemetry_push(request):
         if not states:
             return web.json_response({"error": "no HA states"}, status=502)
 
-        #CC- Build entity_id → numeric_state lookup
-        states_lookup = {}
-        for s in states:
-            eid = s.get("entity_id", "")
-            state = s.get("state")
-            if state not in ("unavailable", "unknown"):
-                states_lookup[eid] = state
-
-        #CC- Map to structured telemetry payload (snake_case fields)
-        telemetry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "fve_production_w": _match_entity("fve_production_w", states_lookup),
-            "house_consumption_w": _match_entity("house_consumption_w", states_lookup),
-            "grid_import_w": _match_entity("grid_import_w", states_lookup),
-            "grid_export_w": _match_entity("grid_export_w", states_lookup),
-            "battery_soc_pct": _match_entity("battery_soc_pct", states_lookup),
-            "battery_power_w": _match_entity("battery_power_w", states_lookup),
-            "temperature": _match_entity("temperature", states_lookup, states),
-        }
-
-        #CC- House consumption must be unsigned (abs) before any balance calculation
-        load = telemetry.get("house_consumption_w")
-        if load is not None:
-            telemetry["house_consumption_w"] = abs(load)
-
-        #CC- Derive grid_import_w / grid_export_w from physics (pv - load - battery).
-        #CC- Overrides mapped sensors which may be: unsigned magnitude (homekit_homekit_grid),
-        #CC- daily cumulative kWh (homekit_sems_import/export), or plain missing.
-        _resolve_grid_from_balance(telemetry)
+        telemetry = _build_telemetry(states)
 
         log.info("Telemetry mapped: PV=%.0fW, Load=%.0fW, Grid=%.0f/%.0fW, SOC=%.0f%%",
                  telemetry.get("fve_production_w") or 0,
@@ -472,7 +504,7 @@ async def handle_telemetry_push(request):
         )
         resp = urllib.request.urlopen(req, timeout=15)
         result = json.loads(resp.read())
-        return web.json_response({"ok": True, "mapped": {k: v for k, v in telemetry.items() if k != "timestamp" and v is not None}, "server_response": result})
+        return web.json_response({"ok": True, "mapped": _telemetry_values(telemetry), "sources": telemetry["sources"], "server_response": result})
     except Exception as e:
         log.error("Telemetry push error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
@@ -778,34 +810,15 @@ async def telemetry_loop():
             continue
 
         try:
+            # CC- mapa role→entita se může na serveru změnit (přemapování) — obnovit před každým pushem,
+            # CC-   jinak by server hodnoty ze staré entity odmítal až do restartu addonu
+            await asyncio.to_thread(_fetch_key_entities)
             states = await _get_ha_states()
             if states:
-                states_lookup = {}
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    state = s.get("state")
-                    if state not in ("unavailable", "unknown"):
-                        states_lookup[eid] = state
-
-                telemetry = {
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "fve_production_w": _match_entity("fve_production_w", states_lookup),
-                    "house_consumption_w": _match_entity("house_consumption_w", states_lookup),
-                    "grid_import_w": _match_entity("grid_import_w", states_lookup),
-                    "grid_export_w": _match_entity("grid_export_w", states_lookup),
-                    "battery_soc_pct": _match_entity("battery_soc_pct", states_lookup),
-                    "battery_power_w": _match_entity("battery_power_w", states_lookup),
-                    "temperature": _match_entity("temperature", states_lookup, states),
-                }
-
-                #CC- House consumption abs, then derive grid from energy balance (physics).
-                load = telemetry.get("house_consumption_w")
-                if load is not None:
-                    telemetry["house_consumption_w"] = abs(load)
-                _resolve_grid_from_balance(telemetry)
+                telemetry = _build_telemetry(states)
 
                 # Only push if we have at least one value
-                has_data = any(v is not None for k, v in telemetry.items() if k != "timestamp")
+                has_data = bool(_telemetry_values(telemetry))
                 if has_data:
                     import urllib.request
                     payload = json.dumps(telemetry).encode()
@@ -1447,9 +1460,13 @@ def _fetch_key_entities():
         )
         resp = urllib.request.urlopen(req, timeout=15)
         data = json.loads(resp.read())
-        ke = data.get("key_entities") or {}
+        ke = {k: v for k, v in (data.get("key_entities") or {}).items() if v}
+        # CC- 2026-10-18: mapa se NAHRAZUJE (ne update) — odebraná/přemapovaná role nesmí zůstat na staré entitě
+        if ke == KEY_ENTITIES:
+            return
+        KEY_ENTITIES.clear()
+        KEY_ENTITIES.update(ke)
         if ke:
-            KEY_ENTITIES.update(ke)
             log.info("KeyEntities loaded: %s", {k: v.split(".")[-1] for k, v in ke.items()})
         else:
             log.info("No KeyEntities configured on server, using pattern matching")

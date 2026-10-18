@@ -4,6 +4,15 @@ Všechny podstatné změny tohoto addonu jsou dokumentovány v tomto souboru.
 Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
 verzování dle [SemVer](https://semver.org/lang/cs/).
 
+## [1.9.1] — 2026-10-18
+
+### Fixed
+
+- **Telemetrie: namapovaná role bez platné hodnoty = „nevím“ (null), žádný pattern fallback.** cid=6: RCT SoC entita byla 34 s `unavailable`, `_match_entity` spadl do vzoru `_state_of_charge` a poslal `…minimum_state_of_charge_island` = 95 → briefing „Baterie teď 95 %“ při 6,2 %. Vzory platí jen pro role, které server nenamapoval.
+- **Payload nese `sources`** (pole → entity_id, grid z bilance = `derived:balance`). Server (McpHomeServer `cd0b708`) hodnotu z jiné entity než mapa uloží jako null.
+- **Jedno sestavení payloadu** `_build_telemetry()` pro ruční push i `telemetry_loop` (dřív dvě kopie).
+- **Mapa KeyEntities se obnovuje před každým pushem a nahrazuje** (dřív jen při startu a `update`) — přemapovaná role nezůstane na staré entitě.
+
 ## [1.9.0] — 2026-07-04
 
 ### Fixed
