@@ -14,7 +14,7 @@
 1. Edituj `<addon>/config.yaml` → `version: "X.Y.Z"` (semver bump).
 2. Přidej řádek do `<addon>/CHANGELOG.md`.
 3. `git add <addon>/config.yaml <addon>/CHANGELOG.md <addon>/...` + commit zpráva ve formátu `<addon> vX.Y.Z: <téma> — <one-line>`.
-4. `git push origin master`.
+4. `git push origin main` + tag `<addon>-vX.Y.Z` (`git push origin <tag>`). **Výchozí větev je `main`, ne master** (`git push origin master` → „src refspec master does not match any").
 5. Pro každého aktivního zákazníka:
    - Pokud má **auto-update zapnutý**: ~5-30 min se mu objeví notifikace v HA, sám aplikuje.
    - Pokud **manuální**: musí v HA jít *Settings → Add-ons → Guard <addon> → Update*.
@@ -40,7 +40,7 @@ Pro vývoj nového feature bez release cyklu:
 
 - **Repo úroveň:**
   ```
-  curl -s https://raw.githubusercontent.com/jufusius/guard-ha-addons/master/guard-agent/config.yaml | grep version
+  curl -s https://raw.githubusercontent.com/jufusius/guard-ha-addons/main/guard-agent/config.yaml | grep version
   ```
 - **HA Supervisor úroveň** (na cílovém RPi, přes guard-agent endpoint):
   ```
@@ -69,6 +69,7 @@ Pro vývoj nového feature bez release cyklu:
 | `arch:` v `config.yaml` neobsahuje cílovou platformu | Zákazníkův HW nedostane image | Defaultně držet všech 5 (`amd64, aarch64, armv7, armhf, i386`). Roman & Jakub = `aarch64` (RPi4). |
 | Zákazník na starém HA OS (< 10.0) | Addon Store API drift | Min HA verze v `config.yaml: homeassistant: "2024.1.0"` (TODO: nastavit) |
 | Push s otevřeným secrets v Dockerfile/run.sh | GitHub secret scanning email | Rotace tokenu okamžitě + amend commit nelze (public history) → force-push *jen* na master, vysvětlit zákazníkovi že je v repo a musí refetchnout. Pro Guard prevence: secrets jen v HA `options.json` (per-installation), nikdy v image. |
+| `update_addon` přes guard-agent na sebe sama → HTTP 403 „App cea3d93e_guard-agent can't update itself!" | Supervisor zakazuje self-update addonu | Kanonicky: `agent-cmd.py <cid> refresh_store` (consent+reason), pak `guard-api.py POST /api/admin/customers/<cid>/ha-fleet/updates/install '{"entityId":"update.guard_agent_aktualizovat","backup":false,"reason":"…","consent":"…"}'` → job, sleduj `GET /api/admin/ha-fleet/jobs/<id>` (`verify.installed`). Read-back: `agent-cmd.py <cid> supervisor_get --payload '{"path":"addons/cea3d93e_guard-agent/info"}'` (version, state) + log `addons/cea3d93e_guard-agent/logs` („Guard Agent vX.Y.Z running", „Telemetry push … → True"). |
 | Auto-update zákazníka spadl uprostřed | HA Supervisor partial state | `ha addons reload <slug>` přes SSH addon nebo `ha core restart` |
 
 ## Známá omezení
@@ -79,3 +80,4 @@ Pro vývoj nového feature bez release cyklu:
 
 ## Changelog mapy
 - 2026-05-11: založeno (po S2 release `guard-agent v1.7.0` + `guard-scanner v1.2.0`).
+- 2026-10-18: `guard-agent v1.9.1` (8702138, tag `guard-agent-v1.9.1`) — telemetrie bez pattern fallbacku pro namapované role + `sources`. cid=6: self-update 403 → fleet `updates/install` job 3e55badacd57 succeeded (09:01:16Z OVĚŘENO 1.9.1), addon started, push 09:01:36Z SoC 11,5 %. Push jde na `main`. Známé: „Charge servo not started: No module named 'regulators'" je od 1.8.1 (adresář `agent/regulators/` není v gitu), ne regrese 1.9.1.
