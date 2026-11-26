@@ -107,6 +107,9 @@ FAILURE = {
                     "Prosím vypněte ho na TV ručně:"),
     "revert_incomplete": ("Vrácení se nepodařilo dokončit — nic dalšího jsem neměnil a záznam změn mám uložený. "
                           "Můžu to zkusit znovu (napište „zkusit znovu“), nebo to udělá technik ručně."),
+    "net_check_failed": ("TV se s novým DNS nepřipojila k internetu, takže jsem hned vrátil původní nastavení. "
+                         "Internet na TV funguje jako předtím."),
+    "rate_limited": "Teď toho na TV dělám moc najednou. Zkusím to za chvíli — napište prosím „zkusit znovu“.",
     "ambiguous": "Promiňte, nejsem si jistý odpovědí. Napište prosím přesně „ano“, nebo „ne“.",
     "no_consent": "Bez vašeho souhlasu nic neměním.",
     "dot_unreachable": ("Veřejný AdGuard DNS teď z vaší sítě nefunguje, takže ho nezapnu — jinak by se TV "

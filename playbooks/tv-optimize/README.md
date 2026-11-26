@@ -49,7 +49,9 @@ Python 3.11 a 3.13).
 `TvPlaybook.plan(["speed"])`, `plan(["ads"])`, `plan(["kodi"])` i kombinace. Vrácení: `plan_revert()`.
 
 > Striktní Soukromé DNS (`hostname`) odpojí TV od internetu, když DNS-over-TLS neběží. Proto se
-> veřejný DNS nabízí jen po `check_dot` (při návrhu i těsně před provedením) a vrací se ze snapshotu.
+> veřejný DNS nabízí jen po `check_dot` (při návrhu i těsně před provedením). Hned po zapnutí se
+> připojení ověří přímo z TV (`ping -c 1 -W 3 connectivitycheck.gstatic.com`, jediný povolený ping).
+> Když neprojde do 30 s, DNS se okamžitě vrátí na původní hodnotu ze snapshotu a zákazník se to dozví.
 
 ## Podporované TV
 
@@ -133,6 +135,10 @@ Vynucuje engine (`security.py`) **a** zároveň Guard write-gateway. Jedno nenah
 - **Vrácení** ze snapshotu před prvním zásahem. Při selhání se změny ani snapshot nemažou, plán zůstane
   rozpracovaný (`retry()`), admin dostane eskalaci a skript pro technika (`manual_revert_script()`).
 - **Audit každé akce** bez tajemství (viz `docs/GuardApi.md`).
+- **Rate limity na zákazníka** (klouzavé okno, napříč konverzacemi): ADB 30/min, služby 10/min,
+  config flow 3/h, testy portů a DoT 10/min. Při překročení plán zůstane a jde zopakovat.
+- **Úklid bez plánu** (není co měnit, ale přístup zůstal otevřený) čeká na „hotovo“ stejně přísně
+  jako jinde (reálná zpráva zákazníka, přesné „hotovo“) a pak znovu ověří porty.
 - **AdGuard a router:** jen v síti zákazníka a jen s jeho souhlasem. Pravidla routeru playbook nenastavuje.
 
 ## Kontrakt pro Guard (`GuardApi`)

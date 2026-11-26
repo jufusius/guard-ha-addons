@@ -32,7 +32,7 @@ implementující `GuardApi`. Implementaci dodává Guard MCP server. V testech j
 | `adb(cid, entity_id, command) -> str` | výstup příkazu | `androidtv.adb_command` přes write-gateway. Při nedostupnosti TV vyhodí `tvopt.engine.AdbError`. |
 | `call_service(cid, domain, service, data)` | — | HA služba přes write-gateway. Engine posílá jen `switch.turn_on/off` a `remote.turn_on` s `market://` URL. |
 | `port_status(cid, ip, ports) -> dict[int, bool]` | `{5555: False, 9090: False}` | TCP test jen na IP TV zákazníka a jen porty 5555 a 9090. Neznámý výsledek nevynechávat, ale vrátit bez klíče. Engine to bere jako „nepodařilo se ověřit“. |
-| `check_dot(cid, hostname) -> bool` | dostupnost | Ověří z HA hostu zákazníka, že DNS-over-TLS (853) na `hostname` funguje. Volá se před zapnutím veřejného AdGuard DNS i těsně před provedením. |
+| `check_dot(cid, hostname) -> bool` | dostupnost | Ověří z HA hostu zákazníka, že DNS-over-TLS (853) na `hostname` funguje. Volá se před zapnutím veřejného AdGuard DNS i těsně před provedením. Po zapnutí engine navíc ověří připojení přímo z TV (`ping -c 1 -W 3 connectivitycheck.gstatic.com`, jediný povolený ping). Když neprojde do 30 s, DNS hned vrátí na původní hodnotu. |
 | `load(cid, key) / save(cid, key, value)` | JSON | Stav playbooku per cid (snapshot, změny, chráněné aplikace, rozpracovaný plán, použité id zpráv). |
 | `audit(record)` | — | Zápis do auditního logu, viz níže. |
 
@@ -60,13 +60,22 @@ až po `sanitize_app_name`. Odmítnuté názvy se zapisují jen jako počet.
 
 ## Rate limity
 
-- Engine provede nejvýš 60 ADB příkazů v jednom běhu (`MAX_CALLS_PER_RUN`), pak skončí `PolicyError`.
-- Implementace má navíc vynucovat limity na úrovni brány. Doporučení:
-  - `adb`: 30 příkazů za minutu na cid,
-  - `call_service`: 10 za minutu na cid,
-  - `start_config_flow`: 3 za hodinu na cid,
-  - `port_status` a `check_dot`: 10 za minutu na cid.
-  Při překročení vyhodit výjimku. Engine ji nechá propadnout a bot zákazníkovi řekne, že to zkusí později.
+Engine je vynucuje sám, na zákazníka (cid) v klouzavém okně (`tvopt/ratelimit.py`). Stav ukládá přes
+`load/save` pod klíčem `tv_optimize_rate`, takže platí napříč konverzacemi i instancemi:
+
+| Druh | Limit | Kde se počítá |
+|---|---|---|
+| `adb` | 30 / 60 s | každé volání `adb` |
+| `service` | 10 / 60 s | každé `call_service` |
+| `config_flow` | 3 / 3600 s | `start_config_flow` |
+| `probe` | 10 / 60 s | `port_status`, `check_dot` |
+
+Navíc platí max. 60 ADB příkazů v jednom běhu (`MAX_CALLS_PER_RUN`). Při překročení vrátí veřejná metoda
+`Reply(status="failed", data={"reason": "rate_limited", "retry_after": s})`. Rozpracovaný plán zůstane
+a jde dokončit přes `retry()`. Odmítnuté volání se do limitu nezapočítá.
+
+Implementace má mít vlastní limity i na úrovni write-gateway (stejné nebo přísnější). Engine-side limit
+je druhá vrstva.
 
 ## Chování při chybě
 
@@ -92,6 +101,9 @@ implementaci nad testovacím zákazníkem a simulovanou TV:
 - `test_port_9090_otevreny_eskaluje_a_neni_done`, `test_neznamy_stav_portu_neni_zavreno`.
 - `test_selhani_vraceni_nic_nesmaze_a_jde_zopakovat`.
 - `test_nazvy_aplikaci_od_zakaznika_se_ocisti`.
+- `test_limit_je_na_zakaznika`, `test_engine_limit_napric_instancemi_a_plan_zustane`, `test_limit_pri_provadeni_neztrati_plan`.
+- `test_dns_se_vrati_kdyz_tv_nejde_na_internet_do_30_s`.
+- `test_uklid_bez_planu_jen_realna_zprava`.
 
 Reálná implementace se připojí tak, že se v `conftest.py` přidá fixture vracející ji místo
 `FakeGuard`, např. podle proměnné prostředí `TVOPT_GUARD_IMPL`. Proti skutečné TV zákazníka se testy nikdy nepouštějí.

@@ -39,8 +39,13 @@ FORBIDDEN_CHARS = re.compile(r"[;&|`$<>\\\n\r\t\"'(){}*]|[\x00-\x1f\x7f]")
 
 _PKG = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+"
 _NS = r"(?P<ns>global|system|secure)"
+# Jediný povolený test připojení z TV (po zapnutí Soukromého DNS). Název se překládá přes
+# DNS resolver TV, takže ověří DNS i internet. Žádný jiný ping/host není povolený.
+CONNECTIVITY_CHECK_CMD = "ping -c 1 -W 3 connectivitycheck.gstatic.com"
+
 READ_ONLY = [
     re.compile(r"^getprop ro\.product\.model$"),
+    re.compile("^" + re.escape(CONNECTIVITY_CHECK_CMD) + "$"),
     re.compile(r"^pm list packages( -d)?$"),
     re.compile(rf"^settings get {_NS} [a-z0-9_]+$"),
     re.compile(r"^dumpsys meminfo$"),
