@@ -1,0 +1,29 @@
+name: tv-optimize
+
+on:
+  push:
+    paths:
+      - "playbooks/tv-optimize/**"
+      - ".github/workflows/tv-optimize.yml"
+  pull_request:
+    paths:
+      - "playbooks/tv-optimize/**"
+      - ".github/workflows/tv-optimize.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest
+      - run: python -m pytest playbooks/tv-optimize/tests -q

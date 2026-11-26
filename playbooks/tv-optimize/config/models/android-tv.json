@@ -1,0 +1,84 @@
+{
+  "id": "android-tv",
+  "name": "Android TV (obecně)",
+  "platform": "android_tv",
+  "match": {
+    "vendor": [],
+    "model_prefix": [],
+    "hostname_prefix": [
+      "android"
+    ]
+  },
+  "speed": {
+    "settings": [
+      {
+        "namespace": "global",
+        "key": "window_animation_scale",
+        "value": "0.5"
+      },
+      {
+        "namespace": "global",
+        "key": "transition_animation_scale",
+        "value": "0.5"
+      },
+      {
+        "namespace": "global",
+        "key": "animator_duration_scale",
+        "value": "0.5"
+      }
+    ],
+    "maintenance": [
+      "pm trim-caches 2G",
+      "am kill-all"
+    ],
+    "disable_candidates": [
+      {
+        "package": "com.google.android.backdrop",
+        "label": "Spořič obrazovky Backdrop",
+        "why": "Stahuje obrázky na pozadí; TV použije jednoduchý spořič.",
+        "kind": "bloat",
+        "verified": true
+      },
+      {
+        "package": "com.google.android.play.games",
+        "label": "Google Play Hry",
+        "why": "Na TV se skoro nepoužívá, drží paměť.",
+        "kind": "bloat",
+        "verified": true
+      },
+      {
+        "package": "com.android.printspooler",
+        "label": "Tisk",
+        "why": "Na TV zbytečné.",
+        "kind": "bloat",
+        "verified": true
+      },
+      {
+        "package": "com.google.android.feedback",
+        "label": "Odesílání zpětné vazby Google",
+        "why": "Na TV zbytečné.",
+        "kind": "tracking",
+        "verified": true
+      }
+    ]
+  },
+  "ads": {
+    "settings": [],
+    "private_dns": {
+      "supported": true,
+      "public_hostname": "dns.adguard-dns.com",
+      "_comment": "Veřejný AdGuard DNS je jen volba po výslovném souhlasu zákazníka (třetí strana) a po ověření dostupnosti DoT. Výchozí je AdGuard Home v síti zákazníka."
+    },
+    "disable_candidates": [],
+    "manual_steps": [
+      "Nastavení → Předvolby zařízení → Domovská obrazovka → vypnout „Povolit náhledy videí“ a „Povolit náhledy zvuku“.",
+      "Nastavení → Předvolby zařízení → Informace → Právní informace → Reklamy → zapnout „Odhlásit personalizaci reklam“ (pokud TV nabízí)."
+    ],
+    "_comment": "Systémové doporučovací balíčky (např. leanbacklauncher.recommendations) se nevypínají — jsou součástí launcheru. Reklamy se řeší přes Soukromé DNS a ruční kroky."
+  },
+  "kodi": {
+    "package": "org.xbmc.kodi",
+    "http_port": 8080,
+    "ws_port_allowed": false
+  }
+}
