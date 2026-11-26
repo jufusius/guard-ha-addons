@@ -55,6 +55,9 @@ při načítání aplikací a launcheru.
 ### Předpoklad: ADB přes síť (jednorázově, člověk u TV)
 1. TV: Nastavení → Předvolby zařízení → Informace → 7× kliknout na **Sestavení** → vývojářské možnosti.
 2. Předvolby zařízení → Pro vývojáře → **Ladění USB** zapnout (na Mi TV funguje i po síti, port 5555).
+   Když přepínač nejde zapnout (Mi TV): ověřit, že je TV přihlášená k Google účtu a není
+   aktivní rodičovský zámek / omezený profil; jinak optimalizovat ručně (animace v Pro vývojáře,
+   vypnutí aplikací v Nastavení → Aplikace) a ADB vynechat.
 3. HA: `ha_config_flow_start(cid, "androidtv")` → `{"host": "<ip TV>", "port": 5555}` →
    na TV potvrdit **Povolit ladění z tohoto počítače (vždy)**.
 4. Admin: povolit `media_player.<tv>` (androidtv) ve write-gateway whitelistu pro služby
@@ -92,6 +95,7 @@ klávesnici, `org.xbmc.kodi`. Seznam balíčků k vypnutí vždy navrhnout záka
 - Pokud TV nemá Play Store (Tizen/webOS), Kodi nejde → nabídnout `samsungtv` / `webostv` integraci.
 
 ## Historie
+- 2026-11-26: TV obývák = **192.168.0.114**, Wi-Fi MAC c0:e7:bf:f1:47:01 (v CustomerDevices id=15 chybně jako Tuya „MITV“ socket), eth MAC 6c:0d:c4:fc:f9:30. Kodi na :8080 neodpovídá (cannot_connect). Integrace kodi „Android-2“ (.106) je jiné zařízení. Ladění USB na TV nejde zapnout. Write-whitelist = `CustomerEntityMapping.IsWritable` (JufMCP SQL je read-only → nastavuje admin v portálu).
 - 2026-11-26: TV = Xiaomi Mi TV MiTV-MOOQ0, Android TV 11. Spuštění Kodi přes `remote.googletv1594` zablokovala write-gateway (`unknown_entity`). Guard TODO #284.
 - 2026-11-26: založeno. cid=5: integrace `kodi` „Android-2“ (192.168.0.106) existuje, ale
   `media_player.android_2` je 30+ dní `off` → Kodi na TV neběží nebo nemá zapnuté HTTP ovládání.
