@@ -78,8 +78,15 @@ při načítání aplikací a launcheru.
 | Uvolnit úložiště / cache | `pm trim-caches 2G` | — |
 | Zastavit těžké aplikace na pozadí | `am kill-all` | — |
 
-Nikdy nevypínat: launcher, Play Store/Play služby, systémové aktualizace, Chromecast, nastavení,
-klávesnici, `org.xbmc.kodi`. Seznam balíčků k vypnutí vždy navrhnout zákazníkovi a čekat na souhlas.
+**Nikdy nevypínat ani nemazat** (pokyn vlastníka, platí i pro ruční optimalizaci bez ADB):
+- YouTube (i YouTube for Android TV)
+- Google Play, Google TV / Google služby (Play Services, Google app, Asistent)
+- Oneplay, Netflix, HBO Max, Disney+, Prime Video
+- Kodi (`org.xbmc.kodi`), SmartTube, Projectivy Launcher
+- systémové: launcher, systémové aktualizace, Chromecast, nastavení, klávesnice
+
+Pokud není jisté, jestli je aplikace streamovací služba, kterou zákazník používá → nechat zapnutou
+a zeptat se. Seznam balíčků k vypnutí vždy navrhnout zákazníkovi a čekat na souhlas.
 
 ### 2. Ověření
 - `dumpsys meminfo` po změnách, porovnat volnou RAM se snapshotem.
