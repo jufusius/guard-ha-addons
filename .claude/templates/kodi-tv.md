@@ -47,6 +47,41 @@ a WS port `9090`, pokud se flow zeptá. Heslo se **neukládá** do Guard DB ani 
   (ne `off`/`unavailable`), když Kodi běží.
 - Pokud `off`: Kodi neběží, nebo HTTP ovládání vypnuté, nebo změněná IP.
 
+## Optimalizace TV na vyžádání (input lag při načítání)
+
+Spouští se **jen na výslovnou žádost** (Guard TODO #284). Cíl: rychlejší odezva ovladače
+při načítání aplikací a launcheru.
+
+### Předpoklad: ADB přes síť (jednorázově, člověk u TV)
+1. TV: Nastavení → Předvolby zařízení → Informace → 7× kliknout na **Sestavení** → vývojářské možnosti.
+2. Předvolby zařízení → Pro vývojáře → **Ladění USB** zapnout (na Mi TV funguje i po síti, port 5555).
+3. HA: `ha_config_flow_start(cid, "androidtv")` → `{"host": "<ip TV>", "port": 5555}` →
+   na TV potvrdit **Povolit ladění z tohoto počítače (vždy)**.
+4. Admin: povolit `media_player.<tv>` (androidtv) ve write-gateway whitelistu pro služby
+   `androidtv.adb_command` a `remote.turn_on`. Bez toho brána vrací `unknown_entity`.
+
+### 0. Snapshot (vždy před změnou, kvůli vrácení)
+`androidtv.adb_command`, výstup uložit do Guardu k zákazníkovi:
+- `settings list global`, `settings list system`, `settings list secure`
+- `pm list packages -d` (už vypnuté balíčky)
+- `dumpsys meminfo | head -40` (RAM před optimalizací)
+
+### 1. Změny (každou zvlášť, s read-back)
+| Krok | Příkaz | Vrácení |
+|---|---|---|
+| Kratší animace | `settings put global window_animation_scale 0.5` (+ `transition_animation_scale`, `animator_duration_scale`) | hodnota `1.0` |
+| Limit procesů na pozadí | `settings put global background_process_limit 2` *(jen pokud TV moc swapuje; ne vždy dostupné)* | `settings delete global background_process_limit` |
+| Vypnout nepoužívané předinstalované aplikace | `pm disable-user --user 0 <balíček>`, jen ze seznamu odsouhlaseného zákazníkem | `pm enable <balíček>` |
+| Uvolnit úložiště / cache | `pm trim-caches 2G` | — |
+| Zastavit těžké aplikace na pozadí | `am kill-all` | — |
+
+Nikdy nevypínat: launcher, Play Store/Play služby, systémové aktualizace, Chromecast, nastavení,
+klávesnici, `org.xbmc.kodi`. Seznam balíčků k vypnutí vždy navrhnout zákazníkovi a čekat na souhlas.
+
+### 2. Ověření
+- `dumpsys meminfo` po změnách, porovnat volnou RAM se snapshotem.
+- Zákazník potvrdí subjektivní odezvu; při zhoršení vrátit podle tabulky.
+
 ## Úklid (jen s potvrzením vlastníka/zákazníka)
 - Osiřelé entity (`media_player.kodi_<ip>` bez config entry, `unavailable` dlouhodobě) a
   config entries na IP, které už neodpovídají.
@@ -57,6 +92,7 @@ a WS port `9090`, pokud se flow zeptá. Heslo se **neukládá** do Guard DB ani 
 - Pokud TV nemá Play Store (Tizen/webOS), Kodi nejde → nabídnout `samsungtv` / `webostv` integraci.
 
 ## Historie
+- 2026-11-26: TV = Xiaomi Mi TV MiTV-MOOQ0, Android TV 11. Spuštění Kodi přes `remote.googletv1594` zablokovala write-gateway (`unknown_entity`). Guard TODO #284.
 - 2026-11-26: založeno. cid=5: integrace `kodi` „Android-2“ (192.168.0.106) existuje, ale
   `media_player.android_2` je 30+ dní `off` → Kodi na TV neběží nebo nemá zapnuté HTTP ovládání.
   Další stará položka `kodi` 192.168.0.105 (IP offline) a osiřelá `media_player.kodi_192_168_0_106`.
