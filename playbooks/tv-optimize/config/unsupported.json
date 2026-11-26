@@ -1,0 +1,35 @@
+{
+  "tizen": {
+    "name": "Samsung (Tizen)",
+    "ha_integration": "samsungtv",
+    "can": [
+      "Zapnout/vypnout TV a přepínat zdroje přes Home Assistant (integrace Samsung Smart TV).",
+      "Blokovat reklamy v celé domácí síti přes AdGuard — nastaví správce Guardu, jen po domluvě s vámi a jen ve vaší síti."
+    ],
+    "cannot": [
+      "Kodi — na Tizenu není.",
+      "Zrychlit systém nebo vypnout předinstalované aplikace — Samsung k tomu nedává přístup.",
+      "Změnit animace."
+    ]
+  },
+  "webos": {
+    "name": "LG (webOS)",
+    "ha_integration": "webostv",
+    "can": [
+      "Zapnout/vypnout TV, hlasitost a spouštět aplikace přes Home Assistant (integrace LG webOS).",
+      "Blokovat reklamy v celé domácí síti přes AdGuard — nastaví správce Guardu, jen po domluvě s vámi a jen ve vaší síti."
+    ],
+    "cannot": [
+      "Kodi — na webOS není v obchodě LG.",
+      "Zrychlit systém nebo vypnout předinstalované aplikace — LG k tomu nedává přístup.",
+      "Změnit animace."
+    ]
+  },
+  "unknown": {
+    "name": "Neznámá TV",
+    "can": [],
+    "cannot": [
+      "Nepoznal jsem, o jakou televizi jde, takže nic měnit nebudu. Pošlete mi prosím značku a model (Nastavení → Informace)."
+    ]
+  }
+}

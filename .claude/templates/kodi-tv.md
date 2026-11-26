@@ -1,5 +1,8 @@
 # Šablona: Kodi na Android/Google TV → Home Assistant
 
+> **Nahrazeno playbookem [`playbooks/tv-optimize/`](../../playbooks/tv-optimize/README.md)** (moduly
+> rychlost / bez reklam / Kodi / úklid a vrácení). Tahle šablona zůstává jako historie nálezů u cid=5.
+>
 > Stav: **INTERNÍ**. Ověřováno jen u vlastníka (cid=5). Do Guard portálu (zákaznické flow)
 > se nasazuje až po výslovném potvrzení. Do té doby nic z toho nespouštět u zákazníků.
 
@@ -29,7 +32,8 @@ Kodi na TV jako `media_player` v HA: stav přehrávání (zapnuto/pauza/co běž
 Kodi → Nastavení → Služby → Ovládání:
 - **Povolit vzdálené ovládání přes HTTP** = zapnuto (port **8080**)
 - Uživatel `kodi`, **heslo nastavit** (nenechávat prázdné)
-- **Povolit vzdálené ovládání z aplikací na jiných systémech** = zapnuto (WebSocket **9090**)
+- **Povolit vzdálené ovládání z aplikací na jiných systémech** = **vypnuto** (port 9090 zůstává zavřený;
+  HA jede přes HTTP 8080, port WebSocketu v config flow nechat prázdný)
 
 ### 3. Integrace do HA
 `ha_config_flow_start(cid, "kodi")` → `ha_config_flow_submit`:
@@ -40,7 +44,8 @@ další krok (pokud vyžaduje přihlášení):
 ```json
 {"username": "kodi", "password": "<heslo>"}
 ```
-a WS port `9090`, pokud se flow zeptá. Heslo se **neukládá** do Guard DB ani do logů.
+port WebSocketu nechat prázdný. Heslo zadává zákazník přímo v HA — bot ho v chatu nežádá a
+**neukládá** do Guard DB ani do logů.
 
 ### 4. Ověření (read-back)
 - `ha_get_states(cid, "media_player")` → nová entita `media_player.<název>` ve stavu `idle`/`playing`

@@ -1,0 +1,27 @@
+{
+  "_comment": "Výchozí chráněné aplikace. Bot je nikdy nevypne ani neodinstaluje. Zákazník si seznam může doplnit (uloží se k jeho cid). Shoda: přesný balíček, prefix balíčku, nebo klíčové slovo v balíčku/názvu.",
+  "apps": [
+    {"name": "YouTube", "aliases": ["youtube", "yt", "youtube tv", "youtube kids", "youtube music"], "packages": ["com.google.android.youtube.tv", "com.google.android.youtube"], "prefixes": ["com.google.android.youtube"]},
+    {"name": "Google Play", "aliases": ["google play", "play store", "obchod play"], "packages": ["com.android.vending"]},
+    {"name": "Služby Google Play", "aliases": ["play services", "sluzby google"], "packages": ["com.google.android.gms", "com.google.android.gsf"]},
+    {"name": "Google app", "aliases": ["google"], "packages": ["com.google.android.googlequicksearchbox"]},
+    {"name": "Asistent Google", "aliases": ["asistent", "assistant", "google asistent"], "packages": ["com.google.android.katniss"]},
+    {"name": "Google TV", "aliases": ["google tv"], "packages": ["com.google.android.videos", "com.google.android.apps.tv.launcherx", "com.google.android.apps.tv.dreamx"]},
+    {"name": "Domovská obrazovka Android TV", "aliases": ["launcher", "domovska obrazovka"], "packages": ["com.google.android.tvlauncher", "com.google.android.leanbacklauncher"]},
+    {"name": "Chromecast", "aliases": ["chromecast", "cast", "promitani"], "packages": ["com.google.android.apps.mediashell"]},
+    {"name": "Oneplay", "aliases": ["oneplay", "one play"], "keywords": ["oneplay"]},
+    {"name": "Netflix", "aliases": ["netflix"], "packages": ["com.netflix.ninja", "com.netflix.mediaclient"], "keywords": ["netflix"]},
+    {"name": "HBO Max", "aliases": ["hbo", "hbo max", "max"], "packages": ["com.wbd.stream", "com.hbo.hbonow"], "keywords": ["hbo"]},
+    {"name": "Disney+", "aliases": ["disney", "disney+", "disney plus"], "packages": ["com.disney.disneyplus"], "keywords": ["disney"]},
+    {"name": "Prime Video", "aliases": ["prime", "prime video", "amazon"], "packages": ["com.amazon.amazonvideo.livingroom"], "keywords": ["amazonvideo", "primevideo"]},
+    {"name": "Kodi", "aliases": ["kodi"], "packages": ["org.xbmc.kodi"], "keywords": ["xbmc", "kodi"]},
+    {"name": "SmartTube", "aliases": ["smarttube", "smart tube"], "prefixes": ["com.liskovsoft.smarttube"], "keywords": ["smarttube"]},
+    {"name": "Projectivy Launcher", "aliases": ["projectivy"], "packages": ["com.spocky.projengmenu"], "keywords": ["projectivy"]}
+  ],
+  "system": {
+    "_comment": "Systémové části, bez kterých TV nefunguje. Nikdy nevypínat (nejde odebrat ani zákazníkem).",
+    "packages": ["android", "com.android.systemui", "com.android.settings", "com.android.tv.settings", "com.android.providers.settings", "com.android.packageinstaller", "com.google.android.packageinstaller", "com.android.inputmethod.latin", "com.google.android.inputmethod.latin", "com.google.android.tvkeyboard", "com.google.android.leanback.ime", "com.android.shell", "com.android.phone", "com.google.android.tv.remote.service", "com.google.android.apps.tv.remote.service"],
+    "keywords": ["launcher", "systemui", "settings", "ota", "update", "upgrade", "keyboard", "inputmethod", "ime", "bluetooth", "remote", "provision", "setupwizard", "setupwraith"]
+  },
+  "streaming_hints": ["tv", "video", "stream", "movie", "film", "play", "player", "iptv", "sport", "music", "radio"]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "google-tv",
+  "name": "Google TV",
+  "platform": "google_tv",
+  "match": {"vendor": [], "model_prefix": [], "hostname_prefix": []},
+  "extends": "android-tv",
+  "_comment": "Google TV má launcher com.google.android.apps.tv.launcherx (chráněný). Reklamy na domovské obrazovce vypne jen „Režim jen aplikace“, a ten zapíná zákazník ručně.",
+  "speed": {"disable_candidates": []},
+  "ads": {
+    "disable_candidates": [],
+    "manual_steps": [
+      "Nastavení → Účty a přihlášení → váš účet → zapnout „Režim jen aplikace“ (zmizí doporučení a reklamy, zůstanou aplikace).",
+      "Nastavení → Soukromí → Reklamy → zapnout „Smazat ID reklamy“ / „Odhlásit personalizaci reklam“."
+    ]
+  }
+}
