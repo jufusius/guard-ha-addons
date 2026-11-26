@@ -3,22 +3,58 @@
   "name": "Xiaomi Mi TV (Android TV)",
   "platform": "android_tv",
   "match": {
-    "vendor": ["xiaomi", "mitv"],
-    "model_prefix": ["MiTV-", "MITV", "Mi TV"],
-    "hostname_prefix": ["MITV", "MiTV"]
+    "vendor": [
+      "xiaomi",
+      "mitv"
+    ],
+    "model_prefix": [
+      "MiTV-",
+      "MITV",
+      "Mi TV"
+    ],
+    "hostname_prefix": [
+      "MITV",
+      "MiTV"
+    ]
   },
   "extends": "android-tv",
-  "_comment": "Kandidáti specifičtí pro Xiaomi. verified=false = zatím neověřeno na skutečném kusu: bot je nenabídne, dokud je admin po kontrole `pm list packages` nepřepne na true. Nabízí se jen balíčky, které na TV opravdu jsou.",
+  "_comment": "Kandidáti specifičtí pro Xiaomi. verified=false = neověřeno na skutečném kusu: zákazníkům se nenabízí, dokud admin neověří `pm list packages` na reálné TV a neschválí je (approved_packages v Guardu) nebo nepřepne na true. Další názvy bez zdroje nepřidávat.",
   "speed": {
     "disable_candidates": [
-      {"package": "com.miui.tv.analytics", "label": "Xiaomi analytika", "why": "Posílá statistiky používání, běží na pozadí.", "kind": "tracking", "verified": false},
-      {"package": "com.xiaomi.mitv.tvmanager", "label": "Xiaomi správce TV", "why": "Čistič paměti na pozadí, sám zpomaluje.", "kind": "bloat", "verified": false}
+      {
+        "package": "com.miui.tv.analytics",
+        "label": "Xiaomi analytika",
+        "why": "Posílá statistiky používání, běží na pozadí.",
+        "kind": "tracking",
+        "verified": false
+      },
+      {
+        "package": "com.xiaomi.mitv.tvmanager",
+        "label": "Xiaomi správce TV",
+        "why": "Čistič paměti na pozadí, sám zpomaluje.",
+        "kind": "bloat",
+        "verified": false
+      }
     ]
   },
   "ads": {
     "disable_candidates": [
-      {"package": "com.miui.systemAdSolution", "label": "Xiaomi reklamní služba", "why": "Doručuje reklamy do systému.", "kind": "ads", "verified": false},
-      {"package": "com.mitv.tvhome.atv", "label": "PatchWall", "why": "Xiaomi domovská obrazovka s reklamními doporučeními.", "kind": "launcher", "verified": false, "requires_replacement_launcher": true}
+      {
+        "package": "com.miui.systemAdSolution",
+        "label": "Xiaomi reklamní služba",
+        "why": "Doručuje reklamy do systému.",
+        "kind": "ads",
+        "verified": false
+      },
+      {
+        "package": "com.mitv.tvhome.atv",
+        "label": "PatchWall",
+        "why": "Xiaomi domovská obrazovka s reklamními doporučeními.",
+        "kind": "launcher",
+        "verified": false,
+        "requires_replacement_launcher": true,
+        "verify_home_after_disable": true
+      }
     ]
   },
   "known_quirks": [

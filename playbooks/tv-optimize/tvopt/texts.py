@@ -17,14 +17,21 @@ USER_STEPS = {
     ],
     "approve_adb": [
         "Na TV se teď objeví okno „Povolit ladění?“.",
-        "Zaškrtněte „Vždy povolit z tohoto počítače“ a potvrďte OK.",
+        "Potvrďte OK.",
+        "Volbu „Vždy povolit z tohoto počítače“ nezaškrtávejte — přístup je jen dočasný.",
         "Napište mi „hotovo“.",
+    ],
+    "disable_adb_manual": [
+        "Na TV otevřete Nastavení → Předvolby zařízení → Pro vývojáře.",
+        "Zvolte „Odvolat autorizace ladění USB“ a potvrďte.",
+        "Vypněte „Ladění USB“.",
+        "Napište mi „hotovo“ a já ověřím, že je přístup opravdu zavřený.",
     ],
     "reenable_adb": [
         "Abych mohl změny vrátit, potřebuji na chvíli znovu přístup k TV.",
         "Na TV otevřete Nastavení → Předvolby zařízení → Pro vývojáře a zapněte „Ladění USB“.",
-        "Když se objeví okno „Povolit ladění?“, potvrďte OK.",
-        "Napište mi „hotovo“. Po vrácení přístup zase vypnu.",
+        "Když se objeví okno „Povolit ladění?“, potvrďte OK (bez „Vždy povolit“).",
+        "Napište mi „hotovo“. Po dokončení přístup zase vypnu.",
     ],
     "install_kodi": [
         "Na TV jsem vám otevřel Google Play se stránkou aplikace Kodi.",
@@ -49,7 +56,8 @@ USER_STEPS = {
         "V aplikaci Home Assistant otevřete Nastavení → Zařízení a služby → Přidat integraci → Kodi.",
         "Hostitel: {ip}, port: 8080, SSL nezaškrtávejte.",
         "Uživatel „kodi“ a heslo, které jste si nastavili v Kodi, zadejte přímo tam (ne do chatu).",
-        "Když se zeptá na port WebSocketu, nechte pole prázdné.",
+        "Pole „WebSocket port“ je předvyplněné 9090 — číslo SMAŽTE a pole nechte prázdné.",
+        "V Kodi nechte „Povolit vzdálené ovládání z aplikací na jiných systémech“ vypnuté.",
         "Napište mi „hotovo“.",
     ],
 }
@@ -61,7 +69,8 @@ MANUAL_FALLBACK = {
         "Občas TV úplně vypněte ze zásuvky na 30 s — uvolní se paměť.",
     ],
     "ads": [
-        "Nastavení → Síť a internet → Soukromé DNS → zadejte „dns.adguard-dns.com“ (pokud TV tuto volbu má).",
+        "Nejlepší ochrana je AdGuard Home přímo ve vaší domácí síti — router ho pak rozdává všem zařízením. Nastaví ho správce Guardu po domluvě s vámi.",
+        "Veřejný AdGuard DNS (Nastavení → Síť a internet → Soukromé DNS → „dns.adguard-dns.com“): DNS dotazy půjdou přes AdGuard (třetí strana). Když služba nepůjde, TV se nepřipojí k internetu — pak Soukromé DNS přepněte na „Vypnuto“.",
         "Nastavení → Předvolby zařízení → Domovská obrazovka: vypněte náhledy videí a zvuku.",
         "Na Google TV: Nastavení → Účty a přihlášení → váš účet → „Režim jen aplikace“.",
     ],
@@ -70,6 +79,20 @@ MANUAL_FALLBACK = {
         "Pak pokračujte podle kroků pro zapnutí ovládání v Kodi, které vám pošlu.",
     ],
 }
+
+PUBLIC_DNS_DISCLOSURE = (
+    "Ve vaší síti nemáte AdGuard Home. Můžu místo toho na TV zapnout veřejný AdGuard DNS.\n"
+    "Upozornění: DNS dotazy půjdou přes AdGuard (třetí strana).\n"
+    "Když tahle služba nebude dostupná, TV se nepřipojí k internetu — před zapnutím proto ověřím, že funguje, "
+    "a kdyby přestala, stačí napsat „vrať to zpátky“.\n"
+    "Chcete to? Odpovězte přesně „ano“ nebo „ne“."
+)
+
+NO_LOCAL_ADGUARD = ("Reklamy v celé domácí síti nejlépe blokuje AdGuard Home ve vaší síti. Zatím ho nemáte — "
+                    "pokud chcete, domluví se s vámi správce Guardu na nastavení. Sám ho nastavovat nebudu.")
+
+END_HINT = ("Pro jistotu můžete na TV v Nastavení → Předvolby zařízení → Pro vývojáře zvolit "
+            "„Odvolat autorizace ladění USB“ a vypnout „Ladění USB“. Chcete poslat návod?")
 
 FAILURE = {
     "not_writable": ("K ovládání vaší TV zatím nemám povolení. Poslal jsem žádost správci Guardu ke schválení; "
@@ -80,6 +103,15 @@ FAILURE = {
                            "nebo má zapnutý rodičovský zámek. Zkontrolujte to prosím. Jinak to zvládneme ručně:"),
     "unsupported": "Tohle u vaší televize bohužel nejde.",
     "policy": "Tuhle změnu z bezpečnostních důvodů neudělám.",
+    "access_open": ("Dočasný přístup k TV se mi nepodařilo ověřit jako zavřený. Dal jsem vědět správci Guardu. "
+                    "Prosím vypněte ho na TV ručně:"),
+    "revert_incomplete": ("Vrácení se nepodařilo dokončit — nic dalšího jsem neměnil a záznam změn mám uložený. "
+                          "Můžu to zkusit znovu (napište „zkusit znovu“), nebo to udělá technik ručně."),
+    "ambiguous": "Promiňte, nejsem si jistý odpovědí. Napište prosím přesně „ano“, nebo „ne“.",
+    "no_consent": "Bez vašeho souhlasu nic neměním.",
+    "dot_unreachable": ("Veřejný AdGuard DNS teď z vaší sítě nefunguje, takže ho nezapnu — jinak by se TV "
+                        "nepřipojila k internetu."),
+
 }
 
 

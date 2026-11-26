@@ -66,7 +66,8 @@
     "settings": [],
     "private_dns": {
       "supported": true,
-      "default_hostname": "dns.adguard-dns.com"
+      "public_hostname": "dns.adguard-dns.com",
+      "_comment": "Veřejný AdGuard DNS je jen volba po výslovném souhlasu zákazníka (třetí strana) a po ověření dostupnosti DoT. Výchozí je AdGuard Home v síti zákazníka."
     },
     "disable_candidates": [],
     "manual_steps": [

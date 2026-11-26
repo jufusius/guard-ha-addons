@@ -15,39 +15,44 @@ INTENT_PATTERNS = [
                r"rychlejsi", r"optimaliz", r"vyladit", r"reaguje"]),
     ("status", [r"co (jsi|jste) (zmenil|udelal)", r"jake zmeny", r"stav (tv|televize)"]),
 ]
-YES = {"ano", "jo", "jj", "ok", "okay", "souhlasim", "muzes", "muzete", "pust se do toho",
-       "do toho", "proved", "provedte", "udelej to", "jasne", "beru", "potvrzuji"}
-NO = {"ne", "nechci", "zrus", "stop", "nedelej", "pockej", "nesouhlasim", "radsi ne"}
-DONE = {"hotovo", "mam", "mam to", "je to", "hotove", "udelano", "done", "uz", "jo mam", "povoleno",
-        "potvrzeno", "nainstalovano"}
-
 TV_WORDS = re.compile(r"\b(tv|televiz\w*|telku|telka|obrazovk\w*)\b")
 
 
 def detect_intents(text: str) -> list[str]:
-    """Vrátí záměry ve větě (může jich být víc: „zrychli TV a dej pryč reklamy“)."""
+    """Vrátí záměry ve větě (může jich být víc: „zrychli TV a dej pryč reklamy“).
+    Slouží jen k výběru modulu — nikdy jako souhlas."""
     t = norm(text)
     found = [name for name, pats in INTENT_PATTERNS if any(re.search(p, t) for p in pats)]
-    # „vrať“ bez kontextu TV / změn může znamenat cokoli — revert jen s kontextem nebo samostatně
     if "revert" in found and len(t.split()) > 8 and not TV_WORDS.search(t) and "zmen" not in t:
         found.remove("revert")
     return found
 
 
-def _short(text: str) -> str:
-    return re.sub(r"[!.,?]+", "", norm(text)).strip()
+def _short(text) -> str:
+    if not isinstance(text, str):
+        return ""
+    return re.sub(r"[\s!.,?]+$", "", norm(text)).strip()
 
 
-def is_yes(text: str) -> bool:
+def parse_consent(text) -> str:
+    """Přesná shoda: „ano“ → yes, „ne“ → no, cokoli jiného → ambiguous (zeptat se znovu).
+    „jo nechci“, „ano ne“, „souhlasím, ale…“ jsou nejednoznačné."""
     t = _short(text)
-    return t in YES or t.startswith(("ano", "jo ", "souhlasim", "ok "))
+    if t == "ano":
+        return "yes"
+    if t == "ne":
+        return "no"
+    return "ambiguous"
 
 
-def is_no(text: str) -> bool:
-    t = _short(text)
-    return t in NO or t.startswith(("ne ", "nechci", "zrus"))
+def is_yes(text) -> bool:
+    return parse_consent(text) == "yes"
 
 
-def is_done(text: str) -> bool:
-    t = _short(text)
-    return t in DONE or t.startswith("hotovo") or t.endswith("hotovo")
+def is_no(text) -> bool:
+    return parse_consent(text) == "no"
+
+
+def is_done(text) -> bool:
+    """Krok zákazníka je hotový jen při přesném „hotovo“."""
+    return _short(text) == "hotovo"

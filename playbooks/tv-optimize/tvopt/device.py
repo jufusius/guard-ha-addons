@@ -12,7 +12,10 @@ from dataclasses import dataclass, field
 from .config import load_models
 
 ANDROID_DOMAINS = ("androidtv", "androidtv_remote")
-TV_HOST_HINTS = ("mitv", "android", "googletv", "bravia", "chromecast", "tv")
+TV_DOMAINS = ANDROID_DOMAINS + ("samsungtv", "webostv")
+# Úzké nápovědy (porovnává se bez -, _, mezer). „tv“ ani „android“ samy o sobě nestačí.
+TV_HOST_HINTS = ("mitv", "androidtv", "googletv", "bravia", "chromecast", "webostv", "lgwebos",
+                 "samsungtv", "smarttv", "philipstv", "hisensetv", "tcltv")
 
 
 @dataclass
@@ -40,11 +43,19 @@ def _low(x) -> str:
     return str(x or "").strip().lower()
 
 
-def _looks_like_tv(dev: dict) -> bool:
-    text = " ".join(_low(dev.get(k)) for k in ("hostname", "vendor", "model", "category", "name"))
-    return any(h in text for h in TV_HOST_HINTS) or any(
-        w in text for w in ("samsung", "lg", "webos", "tizen", "xiaomi")
-    ) and ("tv" in text or "webos" in text or "tizen" in text)
+def _compact(x) -> str:
+    return "".join(ch for ch in _low(x) if ch.isalnum())
+
+
+def _looks_like_tv(dev: dict, tv_hosts: set, models: dict) -> bool:
+    """TV = má v HA TV integraci na své IP, nebo sedí na profil modelu, nebo úzká nápověda v názvu."""
+    if dev.get("ip") and dev.get("ip") in tv_hosts:
+        return True
+    prof = _match_profile(dev, models)
+    if prof and prof != "android-tv":
+        return True
+    text = " ".join(_compact(dev.get(k)) for k in ("hostname", "model", "name"))
+    return any(h in text for h in TV_HOST_HINTS) or "tizen" in text or "webos" in text
 
 
 def _match_profile(dev: dict, models: dict) -> str | None:
@@ -83,10 +94,16 @@ def detect_tv(context: dict, models: dict | None = None, ip: str | None = None) 
     states = context.get("states", [])
     integrations = context.get("integrations", [])
 
-    candidates = [d for d in devices if _looks_like_tv(d)]
-    if ip:
-        candidates = [d for d in devices if d.get("ip") == ip] or candidates
     hosts = {_entry_host(e) for e in integrations if _entry_host(e)}
+    tv_hosts = {_entry_host(e) for e in integrations if e.get("domain") in TV_DOMAINS}
+    candidates = [d for d in devices if _looks_like_tv(d, tv_hosts, models)]
+    if ip:
+        # výběr jen mezi zařízeními zákazníka; cizí IP nikdy
+        chosen = [d for d in candidates if d.get("ip") == ip]
+        if not chosen:
+            return TvDevice(platform="unknown", profile_id=None,
+                            warnings=[f"IP {ip} nepatří mezi televize zákazníka."])
+        candidates = chosen
 
     def rank(d):
         prof = _match_profile(d, models)
@@ -107,17 +124,16 @@ def detect_tv(context: dict, models: dict | None = None, ip: str | None = None) 
     text = " ".join(_low(dev.get(k)) for k in ("vendor", "model", "hostname", "name"))
 
     warnings = []
-    if _low(dev.get("category")) in ("socket", "smart_socket", "plug", "switch") and _looks_like_tv(
-        {k: v for k, v in dev.items() if k != "category"}
-    ):
+    if _low(dev.get("category")) in ("socket", "smart_socket", "plug", "switch"):
+        # jen NÁVRH adminovi; detekce nikdy nemění oprávnění (ta jsou jen v CustomerEntityMapping)
         warnings.append(
             f"Zařízení {dip} je v Guardu vedené jako „{dev.get('category')}“, ale podle názvu je to TV — "
-            "opravit zařazení v admin portálu."
+            "navrhuji opravit zařazení v admin portálu."
         )
 
     if "samsungtv" in entries or "tizen" in text or ("samsung" in text and "android" not in text):
         platform, profile = "tizen", None
-    elif "webostv" in entries or "webos" in text or text.startswith("lg"):
+    elif "webostv" in entries or "webos" in text:
         platform, profile = "webos", None
     else:
         profile = _match_profile(dev, models)

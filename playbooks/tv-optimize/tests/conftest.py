@@ -1,4 +1,5 @@
 # Spuštění: python -m pytest playbooks/tv-optimize/tests -q
+import copy
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,18 +10,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tvopt.engine import AdbError  # noqa: E402
 
-MITV_IP = "192.0.2.14"   # dokumentační rozsah, žádná reálná IP
+MITV_IP = "192.0.2.14"   # dokumentační rozsahy (RFC 5737), žádné reálné adresy
 OTHER_CID_IP = "192.0.2.99"
+NOW = "2026-11-26T12:00:00+00:00"
 
 
 class FakeTv:
-    """Simulace Android TV za ADB: nastavení, nainstalované a vypnuté balíčky."""
+    """Simulace Android TV za ADB: nastavení, nainstalované a vypnuté balíčky, HOME launcher."""
 
-    def __init__(self, installed, disabled=(), settings=None):
+    def __init__(self, installed, disabled=(), settings=None, home="com.google.android.tvlauncher"):
         self.installed = set(installed)
         self.disabled = set(disabled)
         self.settings = dict(settings or {})
         self.adb_on = True
+        self.home = home
         self.log = []
 
     def shell(self, cmd):
@@ -34,6 +37,8 @@ class FakeTv:
             return "\n".join(f"package:{p}" for p in sorted(self.installed))
         if cmd == "pm list packages -d":
             return "\n".join(f"package:{p}" for p in sorted(self.disabled))
+        if cmd.startswith("cmd package resolve-activity"):
+            return f"priority=0 preferredOrder=0\n{self.home}/.Main"
         if parts[:2] == ["settings", "get"]:
             return self.settings.get(f"{parts[2]}/{parts[3]}", "null")
         if parts[:2] == ["settings", "put"]:
@@ -56,28 +61,48 @@ class FakeTv:
 
 
 class FakeGuard:
-    """Implementace GuardApi pro testy. Data jsou oddělená podle cid."""
+    """Implementace GuardApi pro testy. Data jsou oddělená podle cid. Viz docs/GuardApi.md."""
 
     def __init__(self):
-        self.contexts = {}
-        self.writable = {}
-        self.tvs = {}          # (cid, entity) -> FakeTv
-        self.store = {}
-        self.audits = []
-        self.approvals = []
-        self.services = []
-        self.flows = []
-        self.ports = {}
+        self.contexts, self.writable, self.tvs, self.store = {}, {}, {}, {}
+        self.audits, self.approvals, self.approval_states = [], [], {}
+        self.services, self.flows, self.admin, self.ports = [], [], [], {}
+        self.messages = {}       # (cid, conv, id) -> msg
+        self.approved = {}       # cid -> set balíčků
+        self.dot_ok = True
+        self.port_unknown = False
+
+    def say(self, cid, text, conv="conv-1", author="customer", ts=NOW):
+        mid = f"m{len(self.messages) + 1}"
+        self.messages[(cid, conv, mid)] = {"id": mid, "author": author, "text": text, "ts": ts,
+                                           "cid": cid, "conversation_id": conv}
+        return mid
 
     def context(self, cid):
-        return self.contexts.get(cid, {"devices": [], "states": [], "integrations": []})
+        return copy.deepcopy(self.contexts.get(cid, {"devices": [], "states": [], "integrations": []}))
 
     def writable_entities(self, cid):
         return set(self.writable.get(cid, set()))
 
-    def request_write_approval(self, cid, entity_id, reason):
-        self.approvals.append((cid, entity_id, reason))
-        return f"APR-{len(self.approvals)}"
+    def request_write_approval(self, cid, target, reason):
+        self.approvals.append((cid, target, reason))
+        t = f"APR-{len(self.approvals)}"
+        self.approval_states[t] = "pending"
+        return t
+
+    def approval_status(self, cid, ticket):
+        return self.approval_states.get(ticket, "unknown")
+
+    def approved_packages(self, cid, profile_id):
+        return set(self.approved.get(cid, set()))
+
+    def customer_message(self, cid, conversation_id, message_id):
+        m = self.messages.get((cid, conversation_id, message_id))
+        return copy.deepcopy(m)
+
+    def notify_admin(self, cid, subject, detail):
+        self.admin.append((cid, subject, detail))
+        return f"ADM-{len(self.admin)}"
 
     def start_config_flow(self, cid, domain, data):
         self.flows.append((cid, domain, data))
@@ -90,9 +115,14 @@ class FakeGuard:
 
     def call_service(self, cid, domain, service, data):
         self.services.append((cid, domain, service, data))
+        for s in self.contexts[cid]["states"]:
+            if s["entity_id"] == data.get("entity_id") and domain == "switch":
+                s["state"] = "on" if service == "turn_on" else "off"
         return {}
 
     def port_status(self, cid, ip, ports):
+        if self.port_unknown:
+            return {}
         tv = next((t for (c, _), t in self.tvs.items() if c == cid), None)
         res = {p: False for p in ports}
         if tv and tv.adb_on:
@@ -100,11 +130,13 @@ class FakeGuard:
         res.update(self.ports.get(cid, {}))
         return res
 
+    def check_dot(self, cid, hostname):
+        return self.dot_ok
+
     def load(self, cid, key):
-        return self.store.get((cid, key))
+        return copy.deepcopy(self.store.get((cid, key)))
 
     def save(self, cid, key, value):
-        import copy
         self.store[(cid, key)] = copy.deepcopy(value)
 
     def audit(self, record):
@@ -115,12 +147,11 @@ MITV_INSTALLED = {
     "com.google.android.youtube.tv", "com.netflix.ninja", "com.android.vending", "com.google.android.gms",
     "com.google.android.tvlauncher", "com.google.android.backdrop", "com.google.android.play.games",
     "com.android.printspooler", "com.google.android.feedback", "com.miui.tv.analytics",
-    "com.google.android.katniss", "com.wbd.stream",
+    "com.google.android.katniss", "com.wbd.stream", "net.cme.voyo.cz.tvapp",
 }
 
 
-def mitv_context(with_adb=True, with_remote=True):
-    ents = []
+def mitv_context(with_adb=True, with_remote=True, adguard=None):
     integrations = []
     states = [{"entity_id": "media_player.obyvak_tv", "state": "on", "attributes": {}}]
     if with_adb:
@@ -128,14 +159,17 @@ def mitv_context(with_adb=True, with_remote=True):
     if with_remote:
         integrations.append({"domain": "androidtv_remote", "host": MITV_IP, "entity_ids": ["remote.obyvak_tv"]})
         states.append({"entity_id": "remote.obyvak_tv", "state": "on", "attributes": {}})
+    if adguard:
+        integrations.append({"domain": "adguard", "host": "192.0.2.2"})
+        states.append({"entity_id": "switch.adguard_home_protection", "state": adguard, "attributes": {}})
     return {
         "devices": [
             {"ip": "192.0.2.6", "hostname": "Android-2", "vendor": "", "model": ""},
-            {"ip": MITV_IP, "hostname": "MITV", "vendor": "Tuya", "model": "", "category": "smart_socket",
-             "mac": "02:00:00:00:00:01"},
+            {"ip": MITV_IP, "hostname": "MITV", "vendor": "Tuya", "model": "MiTV-MOOQ0",
+             "category": "smart_socket", "mac": "02:00:00:00:00:01"},
             {"ip": "192.0.2.50", "hostname": "ESP-boiler", "vendor": "Espressif"},
         ],
-        "states": states + ents,
+        "states": states,
         "integrations": integrations,
     }
 
@@ -144,7 +178,7 @@ def mitv_context(with_adb=True, with_remote=True):
 def guard():
     g = FakeGuard()
     g.contexts[5] = mitv_context()
-    g.writable[5] = {"media_player.obyvak_tv", "remote.obyvak_tv"}
+    g.writable[5] = {"media_player.obyvak_tv", "remote.obyvak_tv", "switch.adguard_home_protection"}
     g.tvs[(5, "media_player.obyvak_tv")] = FakeTv(
         MITV_INSTALLED, disabled={"com.google.android.play.games"},
         settings={"global/window_animation_scale": "1.0"})
