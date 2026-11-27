@@ -56,3 +56,27 @@ def is_no(text) -> bool:
 def is_done(text) -> bool:
     """Krok zákazníka je hotový jen při přesném „hotovo“."""
     return _short(text) == "hotovo"
+
+
+# Pozdější úpravy seznamu aplikací. Vrací akci; názvy aplikací vybírá bot ze zprávy
+# a engine je čistí (sanitize_app_name) a páruje jen na známé balíčky.
+APP_ACTIONS = [
+    ("list", [r"jake aplikace", r"seznam aplikac", r"co mam chranen", r"co jsi vypnul"]),
+    ("enable", [r"zapni (zpet|zpatky|znovu)", r"chci (zpet|zpatky)", r"vrat (mi )?(zpet |zpatky )?aplikac",
+                r"obnov aplikac"]),
+    ("unprotect", [r"(uz )?nepouzivam", r"odeber .*(z|ze) (chranen|pouzivan)", r"muzes vypnout i"]),
+    ("disable", [r"vypni (jeste|i|taky|aplikac)", r"schovej", r"nechci (tam )?aplikac"]),
+    ("protect", [r"pouzivam (i|taky|jeste)", r"nevypinej", r"\bnech\b",
+                 r"pridej .*(mezi|do) (chranen|pouzivan)"]),
+]
+
+
+def detect_app_action(text) -> str | None:
+    """„zapni zpátky Xiaomi TV+“ → enable, „Spotify už nepoužívám“ → unprotect, … jinak None."""
+    if not isinstance(text, str):
+        return None
+    t = norm(text)
+    for name, pats in APP_ACTIONS:
+        if any(re.search(p, t) for p in pats):
+            return name
+    return None

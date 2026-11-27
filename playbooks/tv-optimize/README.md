@@ -48,6 +48,14 @@ Python 3.11 a 3.13).
 
 `TvPlaybook.plan(["speed"])`, `plan(["ads"])`, `plan(["kodi"])` i kombinace. Vrácení: `plan_revert()`.
 
+Pozdější změny bez vracení všeho:
+- `add_customer_apps` / `remove_customer_apps`: zákazníkovy chráněné aplikace;
+- `plan_enable_apps`: zapnout zpátky jen vybranou aplikaci, kterou playbook vypnul;
+- `plan_disable_apps`: vypnout další aplikaci, jen ověřenou nebo schválenou;
+- `list_apps`: přehled.
+
+Každá změna na TV jde přes souhlas zákazníka.
+
 > Striktní Soukromé DNS (`hostname`) odpojí TV od internetu, když DNS-over-TLS neběží. Proto se
 > veřejný DNS nabízí jen po `check_dot` (při návrhu i těsně před provedením). Hned po zapnutí se
 > připojení ověří přímo z TV (`ping -c 1 -W 3 connectivitycheck.gstatic.com`, jediný povolený ping).

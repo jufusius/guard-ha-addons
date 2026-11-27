@@ -87,6 +87,7 @@ class Plan:
     summary: str
     ask: list = field(default_factory=list)
     hash: str = ""
+    targets: list = field(default_factory=list)   # u částečného vrácení: jen tyto balíčky
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -873,7 +874,12 @@ class TvPlaybook:
             p["undone"] = sorted(undone)
             self._save(st)
         st.pop("pending", None)
-        if plan.kind == "revert":
+        if plan.kind == "revert" and plan.targets:
+            st["changes"] = [c for c in st["changes"]
+                             if not (c["kind"] == "disable" and c["target"] in plan.targets)]
+            if not st["changes"]:
+                st.pop("snapshot", None)
+        elif plan.kind == "revert":
             st["changes"] = []
             st.pop("snapshot", None)
         self._save(st)
@@ -1024,7 +1030,8 @@ class TvPlaybook:
                      data={"reason": "revert_incomplete", "script": script})
 
     @_rate_limited
-    def plan_revert(self) -> Reply:
+    def plan_revert(self, only: list | None = None) -> Reply:
+        """Vrácení všech změn, nebo s `only` jen zapnutí vybraných vypnutých aplikací."""
         sel = self._select_tv()
         if sel:
             return sel
@@ -1033,6 +1040,10 @@ class TvPlaybook:
             return Reply("info", "Na vaší TV jsem nic neměnil, není co vracet.")
         snap = Snapshot.from_dict(st["snapshot"])
         changes = [Change(**c) for c in st["changes"]]
+        if only is not None:
+            changes = [c for c in changes if c.kind == "disable" and c.target in only]
+            if not changes:
+                return Reply("info", "Tuhle aplikaci jsem na vaší TV nevypínal.")
         steps = []
         for cmd in revert_commands(snap, changes):
             if cmd.startswith("pm enable "):
@@ -1057,11 +1068,131 @@ class TvPlaybook:
                 steps.insert(0, Step("user", "cleanup", "Vy na chvíli zapnete na TV ladění (návod pošlu).",
                                      user_key="reenable_adb"))
         summary = self._summary("revert", [], steps, [], [])
-        plan = Plan("revert", ["cleanup"], steps, summary)
+        plan = Plan("revert", ["cleanup"], steps, summary, targets=sorted(only or []))
         plan.hash = _hash_steps("revert", self.tv.ip, steps)
         st["pending"] = {"plan": plan.to_dict(), "cursor": 0, "consented": False, "proposed_at": self._now()}
         self._save(st)
         self._audit("revert", "proposed", "pending", detail={"hash": plan.hash, "steps": len(steps)})
+        return Reply("need_consent", summary, plan_hash=plan.hash)
+
+    # ---------- pozdější úpravy seznamu aplikací ----------
+    def _labels(self) -> dict:
+        """balíček → čitelný název (z kandidátů profilu)."""
+        out = {}
+        if self.tv.profile_id:
+            prof = self._profile()
+            for mod in ("speed", "ads"):
+                for c in prof.get(mod, {}).get("disable_candidates", []):
+                    out[c["package"]] = c.get("label", c["package"])
+        return out
+
+    def _match_packages(self, names: list, packages: list) -> list:
+        """Názvy od zákazníka (už očištěné) → balíčky ze zadaného seznamu (podle balíčku nebo názvu)."""
+        from .packages import norm
+        labels = self._labels()
+        wanted = []
+        for n in names:
+            nn = norm(n)
+            for pkg in packages:
+                if nn and (nn == pkg.lower() or nn == norm(labels.get(pkg, "")) or nn in norm(labels.get(pkg, ""))):
+                    if pkg not in wanted:
+                        wanted.append(pkg)
+        return wanted
+
+    def remove_customer_apps(self, names: list) -> dict:
+        """Zákazník už aplikaci nepoužívá → odebrat ji z JEHO seznamu chráněných.
+        Výchozí chráněné (YouTube, Netflix…) a systémové odebrat nejde."""
+        st = self._state()
+        removed, not_found = [], 0
+        for raw in list(names or [])[:MAX_CUSTOMER_APPS]:
+            n = sanitize_app_name(raw)
+            if n is None:
+                not_found += 1
+                continue
+            match = [x for x in st["customer_apps"] if x.lower() == n.lower()]
+            if match:
+                st["customer_apps"] = [x for x in st["customer_apps"] if x.lower() != n.lower()]
+                removed.append(match[0])
+            else:
+                not_found += 1
+        self._save(st)
+        self._audit("protect", "remove_customer_apps", "ok", detail={"removed": removed, "not_found": not_found})
+        return {"removed": removed, "not_found": not_found}
+
+    def list_apps(self) -> Reply:
+        """Přehled pro zákazníka: co je chráněné a co jsem vypnul (a jak to změnit)."""
+        st = self._state()
+        default = [a["name"] for a in self.protected_cfg["apps"]]
+        labels = self._labels()
+        disabled = [labels.get(c["target"], c["target"]) for c in st["changes"] if c["kind"] == "disable"]
+        lines = ["Aplikace, na které nikdy nesáhnu: " + ", ".join(default) + "."]
+        if st["customer_apps"]:
+            lines.append("Vámi přidané (taky chráněné): " + ", ".join(st["customer_apps"]) + ".")
+        lines.append("Vypnuté mnou: " + (", ".join(disabled) if disabled else "žádné") + ".")
+        lines.append("Kdykoli můžete napsat třeba „používám i Voyo“, „Spotify už nepoužívám“, "
+                     "„zapni zpátky Xiaomi TV+“ nebo „vypni ještě WallPaper“.")
+        return Reply("info", "\n".join(lines), data={"customer_apps": list(st["customer_apps"]),
+                                                     "disabled": [c["target"] for c in st["changes"]
+                                                                  if c["kind"] == "disable"]})
+
+    @_rate_limited
+    def plan_enable_apps(self, names: list) -> Reply:
+        """„Zapni zpátky X“: zapne jen vybrané aplikace, které jsem vypnul. Ostatní změny zůstanou.
+        Aplikace se zároveň přidá mezi chráněné, aby ji příště nikdo nevypnul."""
+        st = self._state()
+        clean = [n for n in (sanitize_app_name(x) for x in names or []) if n]
+        disabled = [c["target"] for c in st["changes"] if c["kind"] == "disable"]
+        pkgs = self._match_packages(clean, disabled)
+        if not pkgs:
+            return Reply("info", "Tuhle aplikaci jsem na vaší TV nevypínal. Pokud ji nevidíte, najdete ji "
+                                 "v Nastavení → Aplikace → Zobrazit všechny aplikace.")
+        self.add_customer_apps(pkgs)
+        return self.plan_revert(only=pkgs)
+
+    @_rate_limited
+    def plan_disable_apps(self, names: list) -> Reply:
+        """„Vypni ještě X“: jen ověření/adminem schválení kandidáti profilu, nainstalovaní a nechránění."""
+        sel = self._select_tv()
+        if sel:
+            return sel
+        tv = self.tv
+        if not tv.is_android:
+            return self.capabilities()
+        profile = self._profile()
+        approved = set(self.api.approved_packages(self.cid, tv.profile_id) or set())
+        allowed = sorted(disable_candidates(profile, approved))
+        clean = [n for n in (sanitize_app_name(x) for x in names or []) if n]
+        pkgs = self._match_packages(clean, allowed)
+        if not pkgs:
+            return Reply("info", "Tuhle aplikaci zatím vypnout neumím — není mezi ověřenými aplikacemi pro "
+                                 "vaši TV. Můžete ji vypnout sami v Nastavení → Aplikace, nebo požádám správce "
+                                 "Guardu o ověření.", data={"reason": "not_candidate"})
+        st = self._state()
+        protection = build_protection(st["customer_apps"], self.protected_cfg)
+        blocked = [p for p in pkgs if protection.protects(p)]
+        if blocked:
+            return Reply("info", "Tuhle aplikaci máte mezi používanými, takže ji nevypnu. Pokud ji už "
+                                 "nepoužíváte, napište mi to a pak ji vypnu.", data={"reason": "protected"})
+        r = self.ensure_adb("speed")
+        if r.status != "info":
+            return r
+        snap, cur, dis = self._take_snapshot([], "speed")
+        sub = {"speed": {"disable_candidates": [
+            c for mod in ("speed", "ads") for c in profile.get(mod, {}).get("disable_candidates", [])
+            if c["package"] in pkgs]}}
+        ask: list = []
+        steps = self._disable_steps(sub, "speed", snap, dis, protection, approved, ask)
+        if not steps:
+            return Reply("info", "Tahle aplikace už je vypnutá, nebo na vaší TV není.")
+        steps.append(Step("close_access", "cleanup", texts.MODULE_BENEFIT["cleanup"],
+                          done="Dočasný přístup k TV jsem zase vypnul a ověřil, že je zavřený."))
+        summary = self._summary("apply", ["speed"], steps, ask, [])
+        plan = Plan("apply", ["speed"], steps, summary, ask=[a["label"] for a in ask])
+        plan.hash = _hash_steps("apply", tv.ip, steps)
+        st = self._state()
+        st["pending"] = {"plan": plan.to_dict(), "cursor": 0, "consented": False, "proposed_at": self._now()}
+        self._save(st)
+        self._audit("plan", "proposed", "pending", detail={"hash": plan.hash, "disable": pkgs})
         return Reply("need_consent", summary, plan_hash=plan.hash)
 
     def status(self) -> Reply:

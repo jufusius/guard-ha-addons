@@ -59,6 +59,23 @@ id skutečné zákaznické zprávy, nic nevolej.
   „ano“ na upozornění o třetí straně.
 - Každý krok se zapisuje do auditu automaticky (engine). Nic neobcházej přímým voláním HA.
 
+## 3a. Pozdější změny seznamu aplikací
+
+Zákazník může kdykoli později říct, co používá nebo co chce zpátky. Nejdřív zkus
+`tvopt.intents.detect_app_action(zpráva)`. Názvy aplikací vyber ze zprávy a předej je enginu.
+Engine je sám očistí a spáruje jen se známými balíčky.
+
+| Akce | Příklad | Volání |
+|---|---|---|
+| `protect` | „používám i Voyo“, „nevypínej Spotify“ | `add_customer_apps([...])` |
+| `unprotect` | „Spotify už nepoužívám“ | `remove_customer_apps([...])` (výchozí chráněné odebrat nejde) |
+| `enable` | „zapni zpátky Xiaomi TV+“ | `plan_enable_apps([...])` → shrnutí → `consent(plan_hash, message_id)`. Zapne jen tuhle aplikaci, ostatní změny zůstanou, aplikace se přidá mezi chráněné. |
+| `disable` | „vypni ještě WallPaper“ | `plan_disable_apps([...])`. Jen ověření nebo adminem schválení kandidáti, nikdy chráněné. Pak souhlas jako u plánu. |
+| `list` | „jaké aplikace máš chráněné?“ | `list_apps()` |
+
+Když `plan_disable_apps` vrátí `not_candidate`, nabídni zákazníkovi ruční vypnutí v *Nastavení → Aplikace*
+nebo žádost o ověření správcem. Sám nic nevypínej.
+
 ## 4. Vrácení
 
 „vrať to zpátky“ → `plan_revert()` → shrnutí → `consent(plan_hash, message_id)`.
