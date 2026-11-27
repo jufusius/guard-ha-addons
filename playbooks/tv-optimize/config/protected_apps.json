@@ -229,10 +229,17 @@
       "com.xiaomi.android.tvsetup.partnercustomizer",
       "com.xiaomi.mitv.updateservice",
       "com.mitv.upgrader",
-      "com.mediatek.tv.systemupdater"
+      "com.mediatek.tv.systemupdater",
+      "com.xiaomi.wfdsinkhelperservice",
+      "com.mitv.milinkservice",
+      "xiaomi.tvservice",
+      "com.mitv.tvlock",
+      "com.xiaomo.tv.milegal",
+      "com.xiaomi.tvqs.overseas"
     ],
     "prefixes": [
-      "com.mediatek."
+      "com.mediatek.",
+      "com.mitv.livetv"
     ],
     "warn_keywords": [
       "launcher",
