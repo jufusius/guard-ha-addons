@@ -24,6 +24,8 @@ class FakeTv:
         self.settings = dict(settings or {})
         self.adb_on = True
         self.home = home
+        self.online = True          # odpovídá TV na test připojení?
+        self.online_after = 0       # kolik pokusů o ping má selhat, než projde
         self.log = []
 
     def shell(self, cmd):
@@ -37,6 +39,11 @@ class FakeTv:
             return "\n".join(f"package:{p}" for p in sorted(self.installed))
         if cmd == "pm list packages -d":
             return "\n".join(f"package:{p}" for p in sorted(self.disabled))
+        if cmd.startswith("ping "):
+            if self.online and self.online_after <= 0:
+                return "1 packets transmitted, 1 received, 0% packet loss, time 0ms"
+            self.online_after -= 1
+            return "1 packets transmitted, 0 received, 100% packet loss, time 0ms"
         if cmd.startswith("cmd package resolve-activity"):
             return f"priority=0 preferredOrder=0\n{self.home}/.Main"
         if parts[:2] == ["settings", "get"]:
@@ -189,6 +196,21 @@ def guard():
     g.writable[7] = {"media_player.cizi_tv"}
     g.tvs[(7, "media_player.cizi_tv")] = FakeTv(MITV_INSTALLED)
     return g
+
+
+class FakeTime:
+    """Falešný monotónní čas: sleep jen posune hodiny."""
+
+    def __init__(self):
+        self.t = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, s):
+        self.sleeps.append(s)
+        self.t += s
 
 
 @pytest.fixture

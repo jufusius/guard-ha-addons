@@ -13,8 +13,10 @@ Engine navíc vynucuje vlastní pravidla:
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
@@ -23,9 +25,10 @@ from . import texts
 from .config import load_models, load_protected, load_unsupported
 from .device import TvDevice, detect_tv
 from .intents import is_done, parse_consent
+from .ratelimit import RateLimited, hit
 from .packages import REPLACEMENT_LAUNCHERS, build_protection, disable_candidates, resolve_app_name, select_packages
 from .revert import Change, Snapshot, build_snapshot, render_script, revert_commands, snapshot_commands
-from .security import (MAX_CUSTOMER_APPS, CommandPolicy, NotWritable, PolicyError, check_adb_command,
+from .security import (CONNECTIVITY_CHECK_CMD, MAX_CUSTOMER_APPS, CommandPolicy, NotWritable, PolicyError, check_adb_command,
                        check_entity, check_ports, check_service, redact, sanitize_app_name)
 
 STATE_KEY = "tv_optimize"
@@ -34,6 +37,8 @@ KODI_WS_PORT = 9090
 DNS_KEYS = ["global/private_dns_mode", "global/private_dns_specifier"]
 MAX_CALLS_PER_RUN = 60
 MAX_USED_MESSAGES = 200
+NET_CHECK_TIMEOUT = 30      # s: do kdy musí TV po změně DNS projít testem připojení
+NET_CHECK_INTERVAL = 2      # s mezi pokusy
 
 
 class AdbError(Exception):
@@ -82,6 +87,7 @@ class Plan:
     summary: str
     ask: list = field(default_factory=list)
     hash: str = ""
+    targets: list = field(default_factory=list)   # u částečného vrácení: jen tyto balíčky
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -124,6 +130,23 @@ class HomeCheckFailed(Exception):
     pass
 
 
+class NetCheckFailed(Exception):
+    pass
+
+
+def _rate_limited(method):
+    """Veřejné metody: překročený limit → klidná odpověď, rozpracovaný plán zůstane."""
+    @functools.wraps(method)
+    def wrapper(self, *a, **kw):
+        try:
+            return method(self, *a, **kw)
+        except RateLimited as e:
+            self._audit("rate", "rate_limited", "blocked", detail={"kind": e.kind, "retry_after": e.retry_after})
+            return Reply("failed", texts.FAILURE["rate_limited"],
+                         data={"reason": "rate_limited", "retry_after": e.retry_after, "kind": e.kind})
+    return wrapper
+
+
 def _hash_steps(kind: str, tv_ip: str, steps: list) -> str:
     raw = json.dumps([kind, tv_ip] + [asdict(s) for s in steps], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
@@ -132,7 +155,8 @@ def _hash_steps(kind: str, tv_ip: str, steps: list) -> str:
 class TvPlaybook:
     def __init__(self, api: GuardApi, cid: int, conversation_id: str, actor: str = "guard-bot",
                  models: dict | None = None, clock: Callable[[], datetime] | None = None,
-                 tv_ip: str | None = None):
+                 tv_ip: str | None = None, sleep: Callable[[float], None] | None = None,
+                 monotonic: Callable[[], float] | None = None):
         if not conversation_id:
             raise ValueError("conversation_id je povinné (souhlas se váže na konverzaci)")
         self.api, self.cid, self.conversation_id, self.actor = api, int(cid), conversation_id, actor
@@ -143,6 +167,11 @@ class TvPlaybook:
         self._ctx: dict | None = None
         self._tv: TvDevice | None = None
         self._calls = 0
+        self.sleep = sleep or time.sleep
+        self.monotonic = monotonic or time.monotonic
+
+    def _hit(self, kind: str) -> None:
+        hit(self.api, self.cid, kind, self.clock().timestamp())
 
     # ---------- stav a audit ----------
     def _state(self) -> dict:
@@ -241,6 +270,7 @@ class TvPlaybook:
             self._save(st)
         return None
 
+    @_rate_limited
     def choose_tv(self, ip: str) -> Reply:
         """Zákazník vybral TV. Musí to být jedna z jeho TV (ne libovolná IP)."""
         ctx = self.api.context(self.cid)
@@ -302,6 +332,7 @@ class TvPlaybook:
         if self._calls > MAX_CALLS_PER_RUN:
             raise PolicyError("příliš mnoho příkazů v jednom běhu")
         self._guard_entity(self.tv.adb_entity)
+        self._hit("adb")
         try:
             out = self.api.adb(self.cid, self.tv.adb_entity, cmd)
             self._audit(module, "adb", "ok", command=cmd)
@@ -344,6 +375,7 @@ class TvPlaybook:
         self._save(st)
         return None, st
 
+    @_rate_limited
     def user_enabled_dev_mode(self, message_id: str) -> Reply:
         """Zákazník napsal „hotovo“ po zapnutí ladění → config flow `androidtv` na IP JEHO TV,
         jen s doložitelným schválením (zapisovatelná entita téže TV, nebo schválený ticket)."""
@@ -370,6 +402,7 @@ class TvPlaybook:
             st["adb_flow"] = flow
             self._save(st)
             return r
+        self._hit("config_flow")
         res = self.api.start_config_flow(self.cid, "androidtv",
                                          {"host": tv.ip, "device_class": "androidtv", "port": ADB_PORT})
         flow.update({"started": True, "attempts": flow.get("attempts", 0) + 1, "ip": tv.ip})
@@ -379,6 +412,7 @@ class TvPlaybook:
                     detail={"proof": proof, "ip": tv.ip})
         return Reply("need_user", texts.steps_text("approve_adb"), user_key="approve_adb")
 
+    @_rate_limited
     def user_approved_adb(self, message_id: str, module: str = "speed") -> Reply:
         r, st = self._require_done(message_id)
         if r:
@@ -397,6 +431,7 @@ class TvPlaybook:
         self._save(st)
         return self.user_enabled_dev_mode(message_id)
 
+    @_rate_limited
     def user_reenabled_adb(self, message_id: str, module: str = "speed") -> Reply:
         r, st = self._require_done(message_id)
         if r:
@@ -469,6 +504,7 @@ class TvPlaybook:
             return None
         return {"host": host, "switch": switch}
 
+    @_rate_limited
     def public_dns_answer(self, message_id: str) -> Reply:
         """Odpověď zákazníka na nabídku veřejného AdGuard DNS (třetí strana). Jen přesné ano/ne."""
         st = self._state()
@@ -490,6 +526,7 @@ class TvPlaybook:
         return Reply("info", "Dobře." if ans == "yes" else "Dobře, veřejný DNS nezapnu.")
 
     # ---------- plán ----------
+    @_rate_limited
     def plan(self, modules: list[str]) -> Reply:
         sel = self._select_tv()
         if sel:
@@ -550,6 +587,13 @@ class TvPlaybook:
                 try:
                     self._close_access(st)
                 except AccessStillOpen as e:
+                    # úklid bez plánu: „hotovo“ se ověří stejně přísně (user_done + reálná zpráva)
+                    steps = [Step("close_access", "cleanup", done="Dočasný přístup k TV je zavřený.")]
+                    cplan = Plan("cleanup", ["cleanup"], steps, "")
+                    cplan.hash = _hash_steps("cleanup", tv.ip, steps)
+                    st["pending"] = {"plan": cplan.to_dict(), "cursor": 0, "consented": True,
+                                     "consent": {"reason": "safety_cleanup"}, "proposed_at": self._now(),
+                                     "waiting": "disable_adb_manual"}
                     self._save(st)
                     return self._access_open_reply(e.problems)
                 self._save(st)
@@ -624,6 +668,7 @@ class TvPlaybook:
             if mode == "hostname" and spec and spec != public_dns:
                 notes.append(f"Vaše TV už používá vlastní DNS ({spec}) — to měnit nebudu.")
             elif not (mode == "hostname" and spec == public_dns):
+                self._hit("probe")
                 if not self.api.check_dot(self.cid, public_dns):
                     notes.append(texts.FAILURE["dot_unreachable"])
                 else:
@@ -635,6 +680,8 @@ class TvPlaybook:
                                       change=Change("setting", "global/private_dns_specifier", spec, public_dns, "ads").to_dict()))
                     steps.append(Step("adb", "ads", command="settings put global private_dns_mode hostname",
                                       change=Change("setting", "global/private_dns_mode", mode, "hostname", "ads").to_dict()))
+                    steps.append(Step("verify_net", "ads",
+                                      "Hned ověřím, že je TV připojená k internetu; když ne do 30 s, DNS vrátím."))
         else:
             notes.append(texts.NO_LOCAL_ADGUARD)
         if snap is not None:
@@ -705,6 +752,7 @@ class TvPlaybook:
         return "\n".join(lines)
 
     # ---------- souhlas ----------
+    @_rate_limited
     def consent(self, plan_hash: str, message_id: str) -> Reply:
         """Souhlas jen z reálné zprávy zákazníka (id ověřené chat vrstvou), novější než návrh,
         s přesným „ano“. „ne“ → zrušit; cokoli jiného → zeptat se znovu."""
@@ -734,6 +782,7 @@ class TvPlaybook:
                                                       "message_ts": msg.get("ts")})
         return self.run()
 
+    @_rate_limited
     def user_done(self, message_id: str) -> Reply:
         st = self._state()
         p = st.get("pending")
@@ -757,6 +806,7 @@ class TvPlaybook:
         return self.run()
 
     # ---------- provedení ----------
+    @_rate_limited
     def run(self) -> Reply:
         st = self._state()
         p = st.get("pending")
@@ -767,6 +817,7 @@ class TvPlaybook:
         plan = Plan.from_dict(p["plan"])
         self.refresh()
         failures = []
+        undone = set(p.get("undone", []))
         while p["cursor"] < len(plan.steps):
             step = plan.steps[p["cursor"]]
             if step.kind == "user":
@@ -796,9 +847,17 @@ class TvPlaybook:
                                  data={"reason": "adb_unreachable", "error": str(e)})
             except DotUnreachable:
                 failures.append(texts.FAILURE["dot_unreachable"])
-                while p["cursor"] + 1 < len(plan.steps) and "private_dns" in plan.steps[p["cursor"] + 1].command:
+                while p["cursor"] + 1 < len(plan.steps) and (
+                        "private_dns" in plan.steps[p["cursor"] + 1].command
+                        or plan.steps[p["cursor"] + 1].kind == "verify_net"):
                     p["cursor"] += 1
+                    undone.add(p["cursor"])
+            except NetCheckFailed:
+                failures.append(texts.FAILURE["net_check_failed"])
+                undone.update(i for i, s in enumerate(plan.steps) if "private_dns" in s.command)
             except HomeCheckFailed:
+                pkg = step.data.get("package", "")
+                undone.update(i for i, s in enumerate(plan.steps) if s.command.endswith(f" {pkg}") and pkg)
                 failures.append("Domovská obrazovka po vypnutí PatchWall nefungovala, hned jsem ho zapnul zpět.")
             except KodiNotReady:
                 p["waiting"] = "kodi_ha"
@@ -812,15 +871,21 @@ class TvPlaybook:
                 self._save(st)
                 return self._access_open_reply(e.problems)
             p["cursor"] += 1
+            p["undone"] = sorted(undone)
             self._save(st)
         st.pop("pending", None)
-        if plan.kind == "revert":
+        if plan.kind == "revert" and plan.targets:
+            st["changes"] = [c for c in st["changes"]
+                             if not (c["kind"] == "disable" and c["target"] in plan.targets)]
+            if not st["changes"]:
+                st.pop("snapshot", None)
+        elif plan.kind == "revert":
             st["changes"] = []
             st.pop("snapshot", None)
         self._save(st)
         self._audit("plan", "completed", "ok" if not failures else "partial",
                     detail={"hash": plan.hash, "failures": failures})
-        return Reply("done", self._done_text(plan, failures), data={"failures": failures})
+        return Reply("done", self._done_text(plan, failures, undone), data={"failures": failures})
 
     def _exec(self, step: Step, kind: str, st: dict) -> None:
         if step.kind == "adb":
@@ -830,16 +895,20 @@ class TvPlaybook:
         elif step.kind == "service":
             check_service(step.domain, step.service, step.data, step.entity)
             self._guard_entity(step.entity)
+            self._hit("service")
             self.api.call_service(self.cid, step.domain, step.service, step.data)
             self._audit(step.module, "service", "ok", command=f"{step.domain}.{step.service}",
                         detail=step.data, entity=step.entity)
             if step.change and kind == "apply":
                 st["changes"].append(step.change)
         elif step.kind == "check_dot":
+            self._hit("probe")
             if not self.api.check_dot(self.cid, step.data["host"]):
                 self._audit(step.module, "check_dot", "unreachable", detail=step.data)
                 raise DotUnreachable()
             self._audit(step.module, "check_dot", "ok", detail=step.data)
+        elif step.kind == "verify_net":
+            self._verify_net(st)
         elif step.kind == "verify_home":
             self._verify_home(step, st)
         elif step.kind == "verify_kodi":
@@ -865,6 +934,32 @@ class TvPlaybook:
         st["changes"] = [c for c in st["changes"] if not (c["kind"] == "disable" and c["target"] == pkg)]
         raise HomeCheckFailed()
 
+    def _verify_net(self, st: dict) -> None:
+        """Po zapnutí Soukromého DNS: test připojení přímo z TV. Když neprojde do 30 s,
+        DNS se hned vrátí na původní hodnotu ze snapshotu."""
+        deadline = self.monotonic() + NET_CHECK_TIMEOUT
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                out = self._adb(CONNECTIVITY_CHECK_CMD, "ads")
+                ok = " 0% packet loss" in out or "1 received" in out
+            except AdbError:
+                ok = False
+            if ok:
+                self._audit("ads", "verify_net", "ok", detail={"attempts": attempts})
+                return
+            if self.monotonic() + NET_CHECK_INTERVAL >= deadline:
+                break
+            self.sleep(NET_CHECK_INTERVAL)
+        self._audit("ads", "verify_net", "rollback", detail={"attempts": attempts})
+        snap = Snapshot.from_dict(st["snapshot"])
+        dns_changes = [Change(**c) for c in st["changes"] if c["kind"] == "setting" and c["target"] in DNS_KEYS]
+        for cmd in revert_commands(snap, dns_changes):
+            self._adb(cmd, "ads")
+        st["changes"] = [c for c in st["changes"] if not (c["kind"] == "setting" and c["target"] in DNS_KEYS)]
+        raise NetCheckFailed()
+
     def _verify_kodi(self) -> None:
         tv = self.refresh()
         states = {s["entity_id"]: s for s in (self._ctx or {}).get("states", [])}
@@ -881,6 +976,7 @@ class TvPlaybook:
                     self._adb(cmd, "cleanup")
                 except (AdbError, NotWritable, PolicyError):
                     pass  # vypnutí shodí spojení; o výsledku rozhoduje kontrola portů
+        self._hit("probe")
         ports = self.api.port_status(self.cid, self.tv.ip, [ADB_PORT, KODI_WS_PORT]) or {}
         problems = check_ports(ports)
         self._audit("cleanup", "port_check", "ok" if not problems else "problem",
@@ -899,11 +995,15 @@ class TvPlaybook:
         return Reply("failed", msg, user_key="disable_adb_manual", approval_ticket=ticket,
                      data={"reason": "access_open", "problems": problems})
 
-    def _done_text(self, plan: Plan, failures: list) -> str:
+    def _done_text(self, plan: Plan, failures: list, undone: set | None = None) -> str:
+        undone = undone or set()
         if plan.kind == "revert":
             lines = ["Hotovo, TV je zase ve stavu, ve kterém byla předtím."]
+        elif plan.kind == "cleanup":
+            lines = ["Hotovo, ověřil jsem, že dočasný přístup k TV je zavřený."]
         else:
-            lines = ["Hotovo. Co jsem změnil:"] + [f"• {s.done}" for s in plan.steps if s.done]
+            lines = ["Hotovo. Co jsem změnil:"] + [f"• {s.done}" for i, s in enumerate(plan.steps)
+                                                   if s.done and i not in undone]
         if failures:
             lines.append("Tohle se nepovedlo (nic se tím nerozbilo): " + "; ".join(failures))
         if plan.kind == "apply":
@@ -929,7 +1029,9 @@ class TvPlaybook:
         return Reply("failed", texts.FAILURE["revert_incomplete"], approval_ticket=ticket,
                      data={"reason": "revert_incomplete", "script": script})
 
-    def plan_revert(self) -> Reply:
+    @_rate_limited
+    def plan_revert(self, only: list | None = None) -> Reply:
+        """Vrácení všech změn, nebo s `only` jen zapnutí vybraných vypnutých aplikací."""
         sel = self._select_tv()
         if sel:
             return sel
@@ -938,6 +1040,10 @@ class TvPlaybook:
             return Reply("info", "Na vaší TV jsem nic neměnil, není co vracet.")
         snap = Snapshot.from_dict(st["snapshot"])
         changes = [Change(**c) for c in st["changes"]]
+        if only is not None:
+            changes = [c for c in changes if c.kind == "disable" and c.target in only]
+            if not changes:
+                return Reply("info", "Tuhle aplikaci jsem na vaší TV nevypínal.")
         steps = []
         for cmd in revert_commands(snap, changes):
             if cmd.startswith("pm enable "):
@@ -962,11 +1068,131 @@ class TvPlaybook:
                 steps.insert(0, Step("user", "cleanup", "Vy na chvíli zapnete na TV ladění (návod pošlu).",
                                      user_key="reenable_adb"))
         summary = self._summary("revert", [], steps, [], [])
-        plan = Plan("revert", ["cleanup"], steps, summary)
+        plan = Plan("revert", ["cleanup"], steps, summary, targets=sorted(only or []))
         plan.hash = _hash_steps("revert", self.tv.ip, steps)
         st["pending"] = {"plan": plan.to_dict(), "cursor": 0, "consented": False, "proposed_at": self._now()}
         self._save(st)
         self._audit("revert", "proposed", "pending", detail={"hash": plan.hash, "steps": len(steps)})
+        return Reply("need_consent", summary, plan_hash=plan.hash)
+
+    # ---------- pozdější úpravy seznamu aplikací ----------
+    def _labels(self) -> dict:
+        """balíček → čitelný název (z kandidátů profilu)."""
+        out = {}
+        if self.tv.profile_id:
+            prof = self._profile()
+            for mod in ("speed", "ads"):
+                for c in prof.get(mod, {}).get("disable_candidates", []):
+                    out[c["package"]] = c.get("label", c["package"])
+        return out
+
+    def _match_packages(self, names: list, packages: list) -> list:
+        """Názvy od zákazníka (už očištěné) → balíčky ze zadaného seznamu (podle balíčku nebo názvu)."""
+        from .packages import norm
+        labels = self._labels()
+        wanted = []
+        for n in names:
+            nn = norm(n)
+            for pkg in packages:
+                if nn and (nn == pkg.lower() or nn == norm(labels.get(pkg, "")) or nn in norm(labels.get(pkg, ""))):
+                    if pkg not in wanted:
+                        wanted.append(pkg)
+        return wanted
+
+    def remove_customer_apps(self, names: list) -> dict:
+        """Zákazník už aplikaci nepoužívá → odebrat ji z JEHO seznamu chráněných.
+        Výchozí chráněné (YouTube, Netflix…) a systémové odebrat nejde."""
+        st = self._state()
+        removed, not_found = [], 0
+        for raw in list(names or [])[:MAX_CUSTOMER_APPS]:
+            n = sanitize_app_name(raw)
+            if n is None:
+                not_found += 1
+                continue
+            match = [x for x in st["customer_apps"] if x.lower() == n.lower()]
+            if match:
+                st["customer_apps"] = [x for x in st["customer_apps"] if x.lower() != n.lower()]
+                removed.append(match[0])
+            else:
+                not_found += 1
+        self._save(st)
+        self._audit("protect", "remove_customer_apps", "ok", detail={"removed": removed, "not_found": not_found})
+        return {"removed": removed, "not_found": not_found}
+
+    def list_apps(self) -> Reply:
+        """Přehled pro zákazníka: co je chráněné a co jsem vypnul (a jak to změnit)."""
+        st = self._state()
+        default = [a["name"] for a in self.protected_cfg["apps"]]
+        labels = self._labels()
+        disabled = [labels.get(c["target"], c["target"]) for c in st["changes"] if c["kind"] == "disable"]
+        lines = ["Aplikace, na které nikdy nesáhnu: " + ", ".join(default) + "."]
+        if st["customer_apps"]:
+            lines.append("Vámi přidané (taky chráněné): " + ", ".join(st["customer_apps"]) + ".")
+        lines.append("Vypnuté mnou: " + (", ".join(disabled) if disabled else "žádné") + ".")
+        lines.append("Kdykoli můžete napsat třeba „používám i Voyo“, „Spotify už nepoužívám“, "
+                     "„zapni zpátky Xiaomi TV+“ nebo „vypni ještě WallPaper“.")
+        return Reply("info", "\n".join(lines), data={"customer_apps": list(st["customer_apps"]),
+                                                     "disabled": [c["target"] for c in st["changes"]
+                                                                  if c["kind"] == "disable"]})
+
+    @_rate_limited
+    def plan_enable_apps(self, names: list) -> Reply:
+        """„Zapni zpátky X“: zapne jen vybrané aplikace, které jsem vypnul. Ostatní změny zůstanou.
+        Aplikace se zároveň přidá mezi chráněné, aby ji příště nikdo nevypnul."""
+        st = self._state()
+        clean = [n for n in (sanitize_app_name(x) for x in names or []) if n]
+        disabled = [c["target"] for c in st["changes"] if c["kind"] == "disable"]
+        pkgs = self._match_packages(clean, disabled)
+        if not pkgs:
+            return Reply("info", "Tuhle aplikaci jsem na vaší TV nevypínal. Pokud ji nevidíte, najdete ji "
+                                 "v Nastavení → Aplikace → Zobrazit všechny aplikace.")
+        self.add_customer_apps(pkgs)
+        return self.plan_revert(only=pkgs)
+
+    @_rate_limited
+    def plan_disable_apps(self, names: list) -> Reply:
+        """„Vypni ještě X“: jen ověření/adminem schválení kandidáti profilu, nainstalovaní a nechránění."""
+        sel = self._select_tv()
+        if sel:
+            return sel
+        tv = self.tv
+        if not tv.is_android:
+            return self.capabilities()
+        profile = self._profile()
+        approved = set(self.api.approved_packages(self.cid, tv.profile_id) or set())
+        allowed = sorted(disable_candidates(profile, approved))
+        clean = [n for n in (sanitize_app_name(x) for x in names or []) if n]
+        pkgs = self._match_packages(clean, allowed)
+        if not pkgs:
+            return Reply("info", "Tuhle aplikaci zatím vypnout neumím — není mezi ověřenými aplikacemi pro "
+                                 "vaši TV. Můžete ji vypnout sami v Nastavení → Aplikace, nebo požádám správce "
+                                 "Guardu o ověření.", data={"reason": "not_candidate"})
+        st = self._state()
+        protection = build_protection(st["customer_apps"], self.protected_cfg)
+        blocked = [p for p in pkgs if protection.protects(p)]
+        if blocked:
+            return Reply("info", "Tuhle aplikaci máte mezi používanými, takže ji nevypnu. Pokud ji už "
+                                 "nepoužíváte, napište mi to a pak ji vypnu.", data={"reason": "protected"})
+        r = self.ensure_adb("speed")
+        if r.status != "info":
+            return r
+        snap, cur, dis = self._take_snapshot([], "speed")
+        sub = {"speed": {"disable_candidates": [
+            c for mod in ("speed", "ads") for c in profile.get(mod, {}).get("disable_candidates", [])
+            if c["package"] in pkgs]}}
+        ask: list = []
+        steps = self._disable_steps(sub, "speed", snap, dis, protection, approved, ask)
+        if not steps:
+            return Reply("info", "Tahle aplikace už je vypnutá, nebo na vaší TV není.")
+        steps.append(Step("close_access", "cleanup", texts.MODULE_BENEFIT["cleanup"],
+                          done="Dočasný přístup k TV jsem zase vypnul a ověřil, že je zavřený."))
+        summary = self._summary("apply", ["speed"], steps, ask, [])
+        plan = Plan("apply", ["speed"], steps, summary, ask=[a["label"] for a in ask])
+        plan.hash = _hash_steps("apply", tv.ip, steps)
+        st = self._state()
+        st["pending"] = {"plan": plan.to_dict(), "cursor": 0, "consented": False, "proposed_at": self._now()}
+        self._save(st)
+        self._audit("plan", "proposed", "pending", detail={"hash": plan.hash, "disable": pkgs})
         return Reply("need_consent", summary, plan_hash=plan.hash)
 
     def status(self) -> Reply:

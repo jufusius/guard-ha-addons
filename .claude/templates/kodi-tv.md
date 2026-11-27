@@ -107,6 +107,7 @@ a zeptat se. Seznam balíčků k vypnutí vždy navrhnout zákazníkovi a čekat
 - Pokud TV nemá Play Store (Tizen/webOS), Kodi nejde → nabídnout `samsungtv` / `webostv` integraci.
 
 ## Historie
+- 2026-11-27: ADB integrace `androidtv` přidána (192.168.0.114:5555, po „Vždy povolit“ pro klíč HA). Guard čtení blokuje (`unknown_entity`, entita není ve whitelistu), takže čtení i optimalizaci udělal Claude na NB-ENVI43 přes adb. Výsledky: MiTV-MOOQ0, Android 11, HOME = `com.google.android.tvlauncher`. Animace 0,5×, vypnuto 16 balíčků (seznam v profilu `xiaomi-mitv`, `seen_on`), zálohu má zákazník v `tv-zaloha.txt` a vrácení v `tv-vratit.cmd`. Kodi integrace „192.168.0.114“ (uživatel `tv-up`, bez WebSocketu) je `idle`. Staré kodi „192.168.0.105“ a „Android-2“ se mají smazat.
 - 2026-11-26: TV obývák = **192.168.0.114**, Wi-Fi MAC c0:e7:bf:f1:47:01 (v CustomerDevices id=15 chybně jako Tuya „MITV“ socket), eth MAC 6c:0d:c4:fc:f9:30. Kodi na :8080 neodpovídá (cannot_connect). Integrace kodi „Android-2“ (.106) je jiné zařízení. Ladění USB na TV nejde zapnout. Write-whitelist = `CustomerEntityMapping.IsWritable` (JufMCP SQL je read-only → nastavuje admin v portálu).
 - 2026-11-26: TV = Xiaomi Mi TV MiTV-MOOQ0, Android TV 11. Spuštění Kodi přes `remote.googletv1594` zablokovala write-gateway (`unknown_entity`). Guard TODO #284.
 - 2026-11-26: založeno. cid=5: integrace `kodi` „Android-2“ (192.168.0.106) existuje, ale

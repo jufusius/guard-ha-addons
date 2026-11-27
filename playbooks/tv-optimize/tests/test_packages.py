@@ -134,3 +134,13 @@ def test_patchwall_jen_s_nahradnim_launcherem():
 def test_preklad_nazvu_aplikace(name, expect):
     r = resolve_app_name(name)
     assert (r["name"] if r else None) == expect
+
+
+def test_xiaomi_profil_podle_realne_tv():
+    pkgs = {c["package"]: c for m in ("speed", "ads") for c in MITV[m]["disable_candidates"]}
+    assert "com.miui.systemAdSolution" not in pkgs                      # na MiTV-MOOQ0 není
+    for p in ("com.miui.tv.analytics", "com.xiaomi.statistic", "com.mitv.tvhome.atv", "fusion.android.tv.demo"):
+        assert pkgs[p]["seen_on"] and pkgs[p]["verified"] is False       # ověřeno na TV, schválení = admin
+    prot = build_protection()
+    for p in ("com.xiaomi.wfdsinkhelperservice", "com.mitv.milinkservice", "com.mitv.livetv.ci_mediatek"):
+        assert prot.protects(p)                                           # promítání a živé vysílání

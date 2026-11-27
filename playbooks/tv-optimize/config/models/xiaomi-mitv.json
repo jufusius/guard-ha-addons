@@ -18,33 +18,112 @@
     ]
   },
   "extends": "android-tv",
-  "_comment": "Kandidáti specifičtí pro Xiaomi. verified=false = neověřeno na skutečném kusu: zákazníkům se nenabízí, dokud admin neověří `pm list packages` na reálné TV a neschválí je (approved_packages v Guardu) nebo nepřepne na true. Další názvy bez zdroje nepřidávat.",
+  "_comment": "Kandidáti specifičtí pro Xiaomi. verified=false: zákazníkům se nenabízí, dokud je admin neschválí (approved_packages v Guardu) nebo nepřepne na true. `seen_on` = kde byl balíček ověřen přes pm list packages a vypnut bez chyby. Názvy bez zdroje nepřidávat.",
   "speed": {
     "disable_candidates": [
       {
         "package": "com.miui.tv.analytics",
         "label": "Xiaomi analytika",
-        "why": "Posílá statistiky používání, běží na pozadí.",
+        "why": "Posílá statistiky používání, běží na pozadí (~48 MB).",
         "kind": "tracking",
-        "verified": false
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "com.xiaomi.statistic",
+        "label": "Xiaomi statistiky",
+        "why": "Sběr statistik.",
+        "kind": "tracking",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
       },
       {
         "package": "com.xiaomi.mitv.tvmanager",
         "label": "Xiaomi správce TV",
         "why": "Čistič paměti na pozadí, sám zpomaluje.",
         "kind": "bloat",
-        "verified": false
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "com.xiaomi.mimusic2",
+        "label": "Mi hudba",
+        "why": "Xiaomi hudební přehrávač.",
+        "kind": "bloat",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "com.mitv.gallery",
+        "label": "Mi galerie",
+        "why": "Galerie fotek z USB/sítě.",
+        "kind": "bloat",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "com.mitv.videoplayer",
+        "label": "Mi přehrávač videa",
+        "why": "Přehrávač videa z USB (náhrada: Kodi).",
+        "kind": "bloat",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "com.xm.webcontent",
+        "label": "Xiaomi webový obsah",
+        "why": "Webový obsah a promo.",
+        "kind": "bloat",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "fusion.android.tv.demo",
+        "label": "Demo režim prodejny",
+        "why": "Prodejní demo, doma zbytečné.",
+        "kind": "bloat",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
       }
     ]
   },
   "ads": {
     "disable_candidates": [
       {
-        "package": "com.miui.systemAdSolution",
-        "label": "Xiaomi reklamní služba",
-        "why": "Doručuje reklamy do systému.",
+        "package": "com.mitv.tvhome.mitvplus",
+        "label": "Xiaomi TV+",
+        "why": "Xiaomi streamovací služba s reklamou.",
         "kind": "ads",
-        "verified": false
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
+      },
+      {
+        "package": "com.mitv.tvhome.michannel",
+        "label": "Mi kanály",
+        "why": "Doporučené kanály Xiaomi.",
+        "kind": "ads",
+        "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ]
       },
       {
         "package": "com.mitv.tvhome.atv",
@@ -52,13 +131,20 @@
         "why": "Xiaomi domovská obrazovka s reklamními doporučeními.",
         "kind": "launcher",
         "verified": false,
+        "seen_on": [
+          "MiTV-MOOQ0 (Android 11, RTM4.220307.164.8835), 2026-11-27: balíček na TV je, pm disable-user prošel bez chyby, HOME zůstal com.google.android.tvlauncher"
+        ],
         "requires_replacement_launcher": true,
-        "verify_home_after_disable": true
+        "verify_home_after_disable": true,
+        "_note": "Na MiTV-MOOQ0 je HOME standardně com.google.android.tvlauncher, PatchWall se nepoužívá."
       }
     ]
   },
   "known_quirks": [
     "Přepínač Ladění USB někdy nejde zapnout: TV musí být přihlášená ke Google účtu a nesmí mít rodičovský zámek ani omezený profil.",
     "Guard ji může mít v seznamu zařízení chybně jako chytrou zásuvku Tuya (hostname MITV) — detekce podle hostname má přednost a nahlásí to adminovi."
+  ],
+  "_removed": [
+    "com.miui.systemAdSolution — na MiTV-MOOQ0 není (pm list packages 2026-11-27), odebráno."
   ]
 }

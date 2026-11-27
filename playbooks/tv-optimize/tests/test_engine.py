@@ -1,15 +1,18 @@
 import json
 
 import pytest
-from conftest import MITV_IP, FakeTv, mitv_context
+from conftest import MITV_IP, FakeTime, FakeTv, mitv_context
 
 from tvopt.engine import STATE_KEY, TvPlaybook
 
 TV = "media_player.obyvak_tv"
 
 
+FT = FakeTime()
+
+
 def pb(guard, clock, cid=5, conv="conv-1"):
-    return TvPlaybook(guard, cid, conversation_id=conv, clock=clock)
+    return TvPlaybook(guard, cid, conversation_id=conv, clock=clock, sleep=FT.sleep, monotonic=FT.monotonic)
 
 
 def tv(guard, cid=5, ent=TV):
@@ -331,6 +334,7 @@ def test_patchwall_home_nefunguje_okamzite_zapnout(guard, clock):
     assert "com.mitv.tvhome.atv" not in t.disabled
     assert t.log.index("pm enable com.mitv.tvhome.atv") > t.log.index("pm disable-user --user 0 com.mitv.tvhome.atv")
     assert "PatchWall" in d.message
+    assert "Vypnul jsem aplikaci „PatchWall“" not in d.message
     assert not any(c["target"] == "com.mitv.tvhome.atv" for c in state(guard)["changes"])
 
 
